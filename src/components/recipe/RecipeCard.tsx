@@ -1,0 +1,300 @@
+import { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { RefreshCw, ArrowUpDown, Plus, Eye, X, Lightbulb } from 'lucide-react';
+import { Recipe, DayOfWeek, MealType, MealPlan, DISH_TYPE_LABELS, DISH_TYPE_ICONS, DishType } from '@/types';
+import { Card } from '@/components/common/Card';
+import { Modal } from '@/components/common/Modal';
+import { RecipeDetail } from './RecipeDetail';
+import { CustomRecipeForm } from './CustomRecipeForm';
+import { IngredientInspiration } from './IngredientInspiration';
+
+interface RecipeCardProps {
+  mealPlan: MealPlan;
+  mealType: MealType;
+  day: DayOfWeek;
+  onRefresh: () => void;
+  onReplaceDish: (dishIndex: number) => void;
+  onRemoveDish: (dishIndex: number) => void;
+  onSwap?: () => void;
+  onCustom: (mealPlan: MealPlan) => void;
+  onInspiration: (recipe: Recipe) => void;
+}
+
+export function RecipeCard({
+  mealPlan,
+  mealType,
+  day,
+  onRefresh,
+  onReplaceDish,
+  onRemoveDish,
+  onSwap,
+  onCustom,
+  onInspiration,
+}: RecipeCardProps) {
+  const [showDetail, setShowDetail] = useState(false);
+  const [showCustom, setShowCustom] = useState(false);
+  const [showInspiration, setShowInspiration] = useState(false);
+  const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  const mealIcon = mealType === 'breakfast' ? '🌅' : mealType === 'lunch' ? '☀️' : '🌙';
+  const mealLabel = mealType === 'breakfast' ? '早餐' : mealType === 'lunch' ? '午餐' : '晚餐';
+
+  const handleViewDetail = (recipe: Recipe) => {
+    setSelectedRecipe(recipe);
+    setShowDetail(true);
+  };
+
+  const handleCustomSave = (newRecipe: Recipe) => {
+    // 追加到当前菜品列表，不替换任何菜
+    onCustom({ dishes: [...mealPlan.dishes, newRecipe] });
+    setShowCustom(false);
+  };
+
+  const toggleExpand = (id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  // 按菜品类型分组，按合理顺序展示
+  const dishOrder: DishType[] = ['staple', 'meat', 'egg', 'vegetable', 'soup', 'dessert'];
+  const groupedDishes = mealPlan.dishes.reduce((acc, dish) => {
+    if (!acc[dish.dishType]) {
+      acc[dish.dishType] = [];
+    }
+    acc[dish.dishType].push(dish);
+    return acc;
+  }, {} as Record<DishType, Recipe[]>);
+
+  return (
+    <>
+      <Card className="relative overflow-hidden">
+        {/* 餐次标题 */}
+        <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-100">
+          <div className="flex items-center gap-2">
+            <span className="text-2xl">{mealIcon}</span>
+            <h3 className="text-lg font-semibold text-gray-800">{mealLabel}</h3>
+            <span className="text-sm text-gray-500">
+              ({mealPlan.dishes.length}道菜)
+            </span>
+          </div>
+          {onSwap && mealType !== 'breakfast' && (
+            <motion.button
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              onClick={onSwap}
+              className="p-1.5 rounded-full hover:bg-gray-100 text-gray-500 transition-colors"
+              title="午晚餐互换"
+            >
+              <ArrowUpDown className="w-4 h-4" />
+            </motion.button>
+          )}
+        </div>
+
+        {/* 菜品列表（按类型分组，带做法展开） */}
+        <div className="space-y-3 mb-4">
+          {dishOrder
+            .filter((dt) => groupedDishes[dt] && groupedDishes[dt].length > 0)
+            .map((dishType) => (
+              <div key={dishType} className="space-y-2">
+                {groupedDishes[dishType].map((recipe, idx) => {
+                  const isExpanded = expandedIds.has(recipe.id);
+                  const globalIndex = mealPlan.dishes.indexOf(recipe);
+                  return (
+                    <div
+                      key={recipe.id}
+                      className="bg-gray-50 rounded-lg overflow-hidden"
+                    >
+                      <motion.div
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        className="flex items-center gap-2 p-2 hover:bg-gray-100 transition-colors cursor-pointer"
+                        onClick={() => toggleExpand(recipe.id)}
+                      >
+                        <span className="text-lg flex-shrink-0">
+                          {DISH_TYPE_ICONS[dishType]}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-gray-800 truncate">
+                            {recipe.name}
+                          </div>
+                          <div className="flex flex-wrap gap-1 mt-0.5">
+                            {recipe.tags.slice(0, 2).map((tag) => (
+                              <span
+                                key={tag}
+                                className="px-1.5 py-0.5 bg-purple-100 text-purple-600 rounded text-xs"
+                              >
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                        <motion.button
+                          whileHover={{ scale: 1.1 }}
+                          whileTap={{ scale: 0.9 }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onReplaceDish(globalIndex);
+                          }}
+                          className="p-1 rounded hover:bg-orange-100 text-orange-500 flex-shrink-0"
+                          title="换一道"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" />
+                        </motion.button>
+                        <motion.button
+                          whileHover={{ scale: 1.1 }}
+                          whileTap={{ scale: 0.9 }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleViewDetail(recipe);
+                          }}
+                          className="p-1 rounded hover:bg-purple-100 text-purple-500 flex-shrink-0"
+                          title="查看详情"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </motion.button>
+                        <motion.button
+                          whileHover={{ scale: 1.1 }}
+                          whileTap={{ scale: 0.9 }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onRemoveDish(globalIndex);
+                          }}
+                          className="p-1 rounded hover:bg-red-100 text-red-400 flex-shrink-0"
+                          title="删除"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </motion.button>
+                      </motion.div>
+
+                      {/* 展开的做法 */}
+                      <AnimatePresence>
+                        {isExpanded && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            className="border-t border-gray-200 bg-white"
+                          >
+                            <div className="p-3 space-y-3 text-sm">
+                              {/* 食材 */}
+                              <div>
+                                <div className="font-medium text-gray-700 mb-1.5 flex items-center gap-1">
+                                  🥗 食材
+                                </div>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {recipe.ingredients.map((ing, i) => (
+                                    <span
+                                      key={i}
+                                      className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs"
+                                    >
+                                      {ing.name} {ing.amount}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+
+                              {/* 做法 */}
+                              <div>
+                                <div className="font-medium text-gray-700 mb-1.5 flex items-center gap-1">
+                                  👨‍🍳 做法
+                                </div>
+                                <ol className="space-y-1 text-gray-600 pl-1">
+                                  {recipe.steps.map((step, i) => (
+                                    <li key={i} className="flex gap-1.5">
+                                      <span className="text-purple-500 font-medium flex-shrink-0">
+                                        {i + 1}.
+                                      </span>
+                                      <span className="flex-1">{step}</span>
+                                    </li>
+                                  ))}
+                                </ol>
+                              </div>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+        </div>
+
+        {/* 操作按钮 */}
+        <div className="flex gap-2 pt-3 border-t border-gray-100">
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => setShowInspiration(true)}
+            className="flex-1 flex items-center justify-center gap-1 px-2 py-2 bg-gradient-to-r from-purple-100 to-purple-200 text-purple-600 rounded-lg text-sm hover:from-purple-200 hover:to-purple-300 transition-all"
+          >
+            <Lightbulb className="w-4 h-4" />
+            食材灵感
+          </motion.button>
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={onRefresh}
+            className="flex-1 flex items-center justify-center gap-1 px-2 py-2 bg-gradient-to-r from-orange-100 to-orange-200 text-orange-600 rounded-lg text-sm hover:from-orange-200 hover:to-orange-300 transition-all"
+          >
+            <RefreshCw className="w-4 h-4" />
+            全部换
+          </motion.button>
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => setShowCustom(true)}
+            className="flex-1 flex items-center justify-center gap-1 px-2 py-2 bg-gradient-to-r from-purple-100 to-purple-200 text-purple-600 rounded-lg text-sm hover:from-purple-200 hover:to-purple-300 transition-all"
+          >
+            <Plus className="w-4 h-4" />
+            自定义
+          </motion.button>
+        </div>
+      </Card>
+
+      {/* 详情弹窗 */}
+      <Modal
+        isOpen={showDetail}
+        onClose={() => setShowDetail(false)}
+        title={selectedRecipe?.name}
+      >
+        {selectedRecipe && <RecipeDetail recipe={selectedRecipe} />}
+      </Modal>
+
+      {/* 自定义弹窗 */}
+      <Modal
+        isOpen={showCustom}
+        onClose={() => setShowCustom(false)}
+        title="添加自定义食谱"
+      >
+        <CustomRecipeForm
+          onSave={handleCustomSave}
+          onCancel={() => setShowCustom(false)}
+        />
+      </Modal>
+
+      {/* 食材灵感弹窗 */}
+      <Modal
+        isOpen={showInspiration}
+        onClose={() => setShowInspiration(false)}
+        title="食材灵感"
+      >
+        <IngredientInspiration
+          onSelect={(recipe) => {
+            onInspiration(recipe);
+            setShowInspiration(false);
+          }}
+          onCancel={() => setShowInspiration(false)}
+        />
+      </Modal>
+    </>
+  );
+}
