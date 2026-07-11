@@ -1,14 +1,19 @@
 import { Recipe } from '@/types';
+import { Heart } from 'lucide-react';
+import { useStore } from '@/store/useStore';
 
 interface RecipeDetailProps {
   recipe: Recipe;
 }
 
 export function RecipeDetail({ recipe }: RecipeDetailProps) {
+  const { favoriteIds, toggleFavorite } = useStore();
+  const isFav = favoriteIds.includes(recipe.id);
+
   return (
     <div className="space-y-6">
       {/* 食谱信息 */}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2 items-center">
         <span className="px-3 py-1 bg-purple-100 text-purple-600 rounded-full text-sm">
           {recipe.category}
         </span>
@@ -20,6 +25,17 @@ export function RecipeDetail({ recipe }: RecipeDetailProps) {
             {tag}
           </span>
         ))}
+        <button
+          onClick={() => toggleFavorite(recipe.id)}
+          className={`ml-auto p-2 rounded-full transition-colors ${
+            isFav
+              ? 'text-red-400 bg-red-50 hover:bg-red-100'
+              : 'text-gray-300 hover:text-red-300 hover:bg-red-50'
+          }`}
+          title={isFav ? '取消收藏' : '收藏'}
+        >
+          <Heart className="w-5 h-5" fill={isFav ? 'currentColor' : 'none'} />
+        </button>
       </div>
 
       {/* 营养价值 */}

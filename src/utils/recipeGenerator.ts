@@ -2,8 +2,8 @@ import { UserSettings, Recipe, WeeklyPlan, DayPlan, AgeGroup, MealPlan, MealType
 import { recipes } from '../data/recipes';
 
 // 根据用户设置生成一周食谱
-export function generateWeeklyPlan(settings: UserSettings): WeeklyPlan {
-  const availableRecipes = filterRecipes(settings);
+export function generateWeeklyPlan(settings: UserSettings, customRecipes: Recipe[] = []): WeeklyPlan {
+  const availableRecipes = filterRecipes(settings, customRecipes);
   const weekUsedIds = new Set<string>();
 
   return {
@@ -18,7 +18,7 @@ export function generateWeeklyPlan(settings: UserSettings): WeeklyPlan {
 }
 
 // 筛选符合条件的食谱
-function filterRecipes(settings: UserSettings): Record<DishType, Recipe[]> {
+function filterRecipes(settings: UserSettings, customRecipes: Recipe[] = []): Record<DishType, Recipe[]> {
   const { babyAge, allergies, dislikes, likes } = settings;
 
   if (!babyAge) {
@@ -27,6 +27,10 @@ function filterRecipes(settings: UserSettings): Record<DishType, Recipe[]> {
 
   // 1. 根据年龄段筛选
   let filtered = recipes.filter(recipe => recipe.ageGroups.includes(babyAge));
+
+  // 1.5 合并用户自定义菜谱（匹配当前年龄段的）
+  const matchingCustom = customRecipes.filter(r => r.ageGroups.includes(babyAge));
+  filtered = [...filtered, ...matchingCustom];
 
   // 2. 排除过敏食物相关食谱
   if (allergies.length > 0) {
@@ -39,18 +43,23 @@ function filterRecipes(settings: UserSettings): Record<DishType, Recipe[]> {
     });
   }
 
-  // 3. 根据喜好调整权重
-  const weighted = filtered.map(recipe => {
+  // 3. 降权不喜欢，提权喜欢
+  const weighted: { recipe: Recipe; weight: number }[] = [];
+  for (const recipe of filtered) {
     let weight = 1;
 
-    // 降低不喜欢的食物权重
+    // 不喜欢：直接排除，不在候选池中出现
     if (dislikes.length > 0) {
-      const hasDisliked = recipe.mainIngredients.some(ingredient =>
+      const hasDisliked = recipe.ingredients.some(ing =>
+        dislikes.some(dislike =>
+          ing.name.includes(dislike) || dislike.includes(ing.name)
+        )
+      ) || recipe.mainIngredients.some(ingredient =>
         dislikes.some(dislike =>
           ingredient.includes(dislike) || dislike.includes(ingredient)
         )
       );
-      if (hasDisliked) weight *= 0.3;
+      if (hasDisliked) continue; // 跳过不喜欢食材的食谱
     }
 
     // 提高喜欢的食物权重
@@ -63,8 +72,8 @@ function filterRecipes(settings: UserSettings): Record<DishType, Recipe[]> {
       if (hasLiked) weight *= 2;
     }
 
-    return { recipe, weight };
-  });
+    weighted.push({ recipe, weight });
+  }
 
   // 按菜品类型分组
   const grouped: Record<DishType, Recipe[]> = {
@@ -100,9 +109,11 @@ function createDayPlan(
   weekUsedIds: Set<string>
 ): DayPlan {
   const age = settings.babyAge!;
-  const breakfast = createMealPlan(availableRecipes, 'breakfast', weekUsedIds, age);
-  const lunch = createMealPlan(availableRecipes, 'lunch', weekUsedIds, age);
-  const dinner = createMealPlan(availableRecipes, 'dinner', weekUsedIds, age);
+  // 跟踪当天已使用的主食名称（米饭除外，米饭可重复）
+  const dayUsedStapleNames = new Set<string>();
+  const breakfast = createMealPlan(availableRecipes, 'breakfast', weekUsedIds, age, dayUsedStapleNames);
+  const lunch = createMealPlan(availableRecipes, 'lunch', weekUsedIds, age, dayUsedStapleNames);
+  const dinner = createMealPlan(availableRecipes, 'dinner', weekUsedIds, age, dayUsedStapleNames);
 
   return { breakfast, lunch, dinner };
 }
@@ -112,7 +123,8 @@ function createMealPlan(
   availableRecipes: Record<DishType, Recipe[]>,
   mealType: MealType,
   usedIds: Set<string>,
-  babyAge: AgeGroup
+  babyAge: AgeGroup,
+  dayUsedStapleNames: Set<string>
 ): MealPlan {
   const dishes: Recipe[] = [];
 
@@ -124,6 +136,7 @@ function createMealPlan(
   // 年龄段分组
   const isBaby = babyAge === '6-8m' || babyAge === '9-11m';
   const isToddler = babyAge === '1-2y';
+  const isOver2 = babyAge === '2-3y' || babyAge === '3-4y';
 
   if (mealType === 'breakfast') {
     if (isBaby) {
@@ -226,12 +239,33 @@ const hasVegetables = (r: Recipe): boolean => {
   return r.mainIngredients.some(ing => VEGETABLE_INGREDIENTS.some(vi => ing.includes(vi)));
 };
 
+// 判断主食是否带汤水（馄饨、粥、汤面、疙瘩汤等），这类主食无需再额外配汤
+const isSoupyStaple = (r: Recipe): boolean => {
+  if (r.dishType !== 'staple') return false;
+  const name = r.name;
+  if (name.includes('馄饨')) return true;
+  if (name.includes('粥')) return true;
+  // 主食类食谱名字含"汤"的都是带汤水主食（疙瘩汤、面片汤等）
+  if (name.includes('汤')) return true;
+  // 汤面：含"面"但不是拌面/炸酱/肉酱面/凉面/炒面等干面
+  if (name.includes('面')) {
+    const dryNoodleKeywords = ['拌面', '炸酱', '肉酱面', '凉面', '炒面'];
+    if (!dryNoodleKeywords.some(k => name.includes(k))) return true;
+  }
+  return false;
+};
+
 // 构建过滤后的各类型菜品列表
   const filterByMeal = (recipes: Recipe[]) => {
     const filtered = recipes.filter(r => {
       if (usedIds.has(r.id)) return false;
       if (mealType === 'breakfast' && isLunchDinnerOnlyStaple(r)) return false;
       if (mealType !== 'breakfast' && isBreakfastOnly(r)) return false;
+      // 2岁以上午餐不喝粥（1-2岁可以偶尔喝）
+      const isOver2 = babyAge === '2-3y' || babyAge === '3-4y';
+      if (mealType === 'lunch' && isOver2 && r.name.includes('粥')) return false;
+      // 午餐不带汤水主食（馄饨、汤面、疙瘩汤等留给早晚餐，午餐要丰盛）
+      if (mealType === 'lunch' && !isBaby && isSoupyStaple(r)) return false;
       return true;
     });
     // 婴儿阶段（6-8m, 9-11m）食谱池小，过滤后为空时允许复用
@@ -257,21 +291,46 @@ const hasVegetables = (r: Recipe): boolean => {
   // 先选主食，检测是否为复合主食（含肉/蛋/豆腐）
   let hasCompositeStaple = false;
   let stapleHasVeggie = false;
-  const stapleRecipe = pickWeightedRecipe(dayFiltered.staple, usedIds);
+  // 过滤掉当天已使用的主食（米饭类除外，米饭可重复；婴儿阶段食谱少，不强制去重）
+  const staplePool = isBaby
+    ? dayFiltered.staple
+    : dayFiltered.staple.filter(r => {
+        const isRice = r.name.includes('米饭') || r.name === '白米饭';
+        if (isRice) return true;
+        return !dayUsedStapleNames.has(r.name);
+      });
+  const stapleRecipe = pickWeightedRecipe(staplePool.length > 0 ? staplePool : dayFiltered.staple);
   if (stapleRecipe) {
     dishes.push(stapleRecipe);
     usedIds.add(stapleRecipe.id);
+    dayUsedStapleNames.add(stapleRecipe.name);
     hasCompositeStaple = isCompositeStaple(stapleRecipe);
     stapleHasVeggie = hasVegetables(stapleRecipe);
   }
 
   // 如果主食已经含荤（馄饨、饺子、包子、炒饭、肉面等），跳过荤菜
-  if (hasCompositeStaple && mealType !== 'breakfast') {
-    requiredTypes = requiredTypes.filter(t => t !== 'meat');
-    optionalTypes = optionalTypes.filter(t => t !== 'meat');
+  if (hasCompositeStaple) {
+    if (mealType !== 'breakfast') {
+      // 2岁以上午餐保留荤菜必选，但过滤掉与主食同种肉类的荤菜（如猪肉馄饨不配猪肉菜）
+      if (mealType === 'lunch' && isOver2) {
+        const stapleMeats = stapleRecipe!.mainIngredients.filter(ing =>
+          MEAT_INGREDIENTS.some(mi => ing.includes(mi) && mi.length > 1)
+        );
+        dayFiltered.meat = dayFiltered.meat.filter(r =>
+          !r.mainIngredients.some(ing => stapleMeats.some(sm => ing.includes(sm)))
+        );
+      } else {
+        requiredTypes = requiredTypes.filter(t => t !== 'meat');
+        optionalTypes = optionalTypes.filter(t => t !== 'meat');
+      }
+    } else {
+      // 早餐：主食已含肉/蛋，不再额外加蛋，避免营养重复
+      requiredTypes = requiredTypes.filter(t => t !== 'egg');
+      optionalTypes = optionalTypes.filter(t => t !== 'egg');
+    }
   }
-  // 如果主食已含蔬菜（春卷、菜肉馄饨等），素菜改为可选
-  if (stapleHasVeggie && mealType !== 'breakfast') {
+  // 如果主食已含蔬菜（春卷、菜肉馄饨等），素菜改为可选（晚餐除外，晚餐必须有蔬菜）
+  if (stapleHasVeggie && mealType !== 'breakfast' && mealType !== 'dinner') {
     if (requiredTypes.includes('vegetable')) {
       requiredTypes = requiredTypes.filter(t => t !== 'vegetable');
       if (!optionalTypes.includes('vegetable')) {
@@ -290,8 +349,23 @@ const hasVegetables = (r: Recipe): boolean => {
       }
     }
   }
-  // 晚餐补偿：复合主食时汤变必选，保证至少有汤配主食
-  if (mealType === 'dinner' && hasCompositeStaple) {
+  // 主食本身带汤水（馄饨、粥、汤面等），不再额外配汤，也不配汤水类甜品（银耳羹等）
+  if (stapleRecipe && isSoupyStaple(stapleRecipe)) {
+    requiredTypes = requiredTypes.filter(t => t !== 'soup');
+    optionalTypes = optionalTypes.filter(t => t !== 'soup');
+    // 防御性：直接清空汤池，确保任何路径都不会选到汤
+    dayFiltered.soup = [];
+    // 过滤掉汤水类甜品（银耳羹、木瓜炖银耳等羹类）
+    dayFiltered.dessert = dayFiltered.dessert.filter(r => !r.name.includes('羹') && !r.name.includes('银耳'));
+    optionalTypes = optionalTypes.filter(t => t !== 'dessert');
+    // 晚餐补偿：带汤水复合主食移除过多菜品，素菜恢复为必选保证不单调
+    if (mealType === 'dinner' && stapleHasVeggie && !requiredTypes.includes('vegetable')) {
+      requiredTypes.push('vegetable');
+      optionalTypes = optionalTypes.filter(t => t !== 'vegetable');
+    }
+  }
+  // 晚餐补偿：复合主食时汤变必选，保证至少有汤配主食（带汤水主食除外）
+  if (mealType === 'dinner' && hasCompositeStaple && !(stapleRecipe && isSoupyStaple(stapleRecipe))) {
     if (optionalTypes.includes('soup')) {
       optionalTypes = optionalTypes.filter(t => t !== 'soup');
       if (!requiredTypes.includes('soup')) {
@@ -300,10 +374,22 @@ const hasVegetables = (r: Recipe): boolean => {
     }
   }
 
+  // 复合主食（含肉/蛋）时，蛋类池过滤掉含肉的蛋类（如蛋饺、蛋卷），避免营养重复
+  if (hasCompositeStaple) {
+    dayFiltered.egg = dayFiltered.egg.filter(r =>
+      !r.mainIngredients.some(ing => MEAT_INGREDIENTS.some(mi => ing.includes(mi)))
+    );
+  }
+
+  // 判断当前主食是否为带汤水主食（用于最终选菜时拦截）
+  const stapleIsSoupy = stapleRecipe ? isSoupyStaple(stapleRecipe) : false;
+
   // 剩余必需菜品
   for (const type of requiredTypes) {
     if (type === 'staple') continue; // 主食已选
-    const recipe = pickWeightedRecipe(dayFiltered[type], usedIds);
+    // 带汤水主食不配汤（最终防线）
+    if (type === 'soup' && stapleIsSoupy) continue;
+    const recipe = pickWeightedRecipe(dayFiltered[type]);
     if (recipe) {
       dishes.push(recipe);
       usedIds.add(recipe.id);
@@ -311,13 +397,18 @@ const hasVegetables = (r: Recipe): boolean => {
   }
 
   // 可选菜品（按概率添加）
+  // 移除已被必选覆盖的类型，避免同类型重复
+  const presentTypes = new Set(dishes.map(d => d.dishType));
+  optionalTypes = optionalTypes.filter(t => !presentTypes.has(t));
   // 早餐：可选蔬果和点心，但最多只选一种，避免营养过剩
   if (mealType === 'breakfast' && optionalTypes.length > 0) {
     if (Math.random() < 0.5) {
       // 从可选中随机选一种
       const shuffled = [...optionalTypes].sort(() => Math.random() - 0.5);
       for (const type of shuffled) {
-        const recipe = pickWeightedRecipe(dayFiltered[type], usedIds);
+        // 带汤水主食不配汤（最终防线）
+        if (type === 'soup' && stapleIsSoupy) continue;
+        const recipe = pickWeightedRecipe(dayFiltered[type]);
         if (recipe) {
           dishes.push(recipe);
           usedIds.add(recipe.id);
@@ -327,8 +418,10 @@ const hasVegetables = (r: Recipe): boolean => {
     }
   } else {
     for (const type of optionalTypes) {
+      // 带汤水主食不配汤（最终防线）
+      if (type === 'soup' && stapleIsSoupy) continue;
       if (Math.random() < optionalProbability) {
-        const recipe = pickWeightedRecipe(dayFiltered[type], usedIds);
+        const recipe = pickWeightedRecipe(dayFiltered[type]);
         if (recipe) {
           dishes.push(recipe);
           usedIds.add(recipe.id);
@@ -337,12 +430,55 @@ const hasVegetables = (r: Recipe): boolean => {
     }
   }
 
-  return { dishes };
+  // 早餐保底：如果只有主食一道菜，营养不够，强制补一道蔬果或点心
+  if (mealType === 'breakfast' && dishes.length < 2) {
+    const supplementTypes: DishType[] = stapleIsSoupy ? ['vegetable'] : ['vegetable', 'dessert'];
+    for (const type of supplementTypes) {
+      const recipe = pickWeightedRecipe(dayFiltered[type]);
+      if (recipe) {
+        dishes.push(recipe);
+        usedIds.add(recipe.id);
+        break;
+      }
+    }
+  }
+
+  // 最终防线1：带汤水主食移除所有汤和银耳类
+  let finalDishes = stapleIsSoupy
+    ? dishes.filter(d => d.dishType !== 'soup' && !d.name.includes('银耳') && !d.name.includes('羹'))
+    : [...dishes];
+
+  // 最终防线2：如果任何配菜（荤菜/素菜/汤）已含蛋，移除单独蛋类菜品，避免蛋营养重复
+  const anySideHasEgg = finalDishes.some(d =>
+    (d.dishType === 'meat' || d.dishType === 'soup' || d.dishType === 'vegetable') &&
+    d.mainIngredients.some(ing => ing.includes('蛋'))
+  );
+  if (anySideHasEgg) {
+    finalDishes = finalDishes.filter(d => d.dishType !== 'egg');
+  }
+
+  // 最终防线3：午晚餐至少3道菜，不足则补（已有素菜则补蛋/点心，否则补素菜）
+  if ((mealType === 'lunch' || mealType === 'dinner') && !isBaby && finalDishes.length < 3) {
+    const existingIds = new Set(finalDishes.map(d => d.id));
+    const hasVeg = finalDishes.some(d => d.dishType === 'vegetable');
+    const supplementOrder: DishType[] = hasVeg ? ['dessert', 'vegetable'] : ['vegetable', 'dessert'];
+    for (const type of supplementOrder) {
+      const recipe = pickWeightedRecipe(
+        dayFiltered[type].filter(r => !existingIds.has(r.id) && !usedIds.has(r.id))
+      );
+      if (recipe) {
+        finalDishes.push(recipe);
+        break;
+      }
+    }
+  }
+
+  return { dishes: finalDishes };
 }
 
 // 根据权重选择食谱（加权随机选择，让偏好食物更易出现）
 // 如果 filteredList 为空（所有食谱都已使用过），则返回 null
-function pickWeightedRecipe(filteredList: Recipe[], usedIds: Set<string>): Recipe | null {
+function pickWeightedRecipe(filteredList: Recipe[]): Recipe | null {
   if (filteredList.length === 0) return null;
   // 对候选列表进行洗牌，然后从中随机选一个
   const shuffled = [...filteredList].sort(() => Math.random() - 0.5);
@@ -352,9 +488,10 @@ function pickWeightedRecipe(filteredList: Recipe[], usedIds: Set<string>): Recip
 // 根据用户提供的食材，搜索匹配的食谱并按匹配度排序
 export function findRecipesByIngredients(
   settings: UserSettings,
+  customRecipes: Recipe[],
   ingredientNames: string[]
 ): Recipe[] {
-  const availableRecipes = filterRecipes(settings);
+  const availableRecipes = filterRecipes(settings, customRecipes);
   const allRecipes = [
     ...availableRecipes.staple,
     ...availableRecipes.meat,
@@ -383,23 +520,25 @@ export function findRecipesByIngredients(
 // 重新生成单个菜品（同一类型替换）
 export function regenerateDish(
   settings: UserSettings,
+  customRecipes: Recipe[],
   usedRecipes: Recipe[],
   dishType: DishType
 ): Recipe | null {
-  const availableRecipes = filterRecipes(settings);
+  const availableRecipes = filterRecipes(settings, customRecipes);
   const usedIds = new Set(usedRecipes.map(r => r.id));
 
   const pool = availableRecipes[dishType].filter(r => !usedIds.has(r.id));
-  return pickWeightedRecipe(pool, usedIds);
+  return pickWeightedRecipe(pool);
 }
 
 // 重新生成单餐食谱
 export function regenerateMeal(
   settings: UserSettings,
+  customRecipes: Recipe[],
   usedRecipes: Recipe[],
   mealType: MealType
 ): MealPlan {
-  const availableRecipes = filterRecipes(settings);
+  const availableRecipes = filterRecipes(settings, customRecipes);
   const usedIds = new Set(usedRecipes.map(r => r.id));
 
   // 从可用食谱中过滤掉已使用的
@@ -412,7 +551,7 @@ export function regenerateMeal(
     dessert: availableRecipes.dessert.filter(r => !usedIds.has(r.id)),
   };
 
-  return createMealPlan(filtered, mealType, usedIds, settings.babyAge!);
+  return createMealPlan(filtered, mealType, usedIds, settings.babyAge!, new Set<string>());
 }
 
 // 交换午餐和晚餐
@@ -429,27 +568,30 @@ export function createCustomRecipe(
   name: string,
   ingredients: string,
   steps: string,
-  ageGroup: AgeGroup,
+  ageGroup: AgeGroup | null,
   dishType: DishType = 'meat'
 ): Recipe {
-  // 解析食材
-  const ingredientList = ingredients.split('\n').filter(line => line.trim()).map(line => {
-    const parts = line.split(/[,，:：]/);
-    return {
-      name: parts[0]?.trim() || line.trim(),
-      amount: parts[1]?.trim() || '适量',
-    };
-  });
+  const fallbackAge: AgeGroup = ageGroup || '3-4y';
+  // 解析食材（选填）
+  const ingredientList = ingredients
+    ? ingredients.split('\n').filter(line => line.trim()).map(line => {
+        const parts = line.split(/[,，:：]/);
+        return {
+          name: parts[0]?.trim() || line.trim(),
+          amount: parts[1]?.trim() || '适量',
+        };
+      })
+    : [];
 
-  // 解析步骤
-  const stepList = steps.split('\n').filter(line => line.trim());
+  // 解析步骤（选填）
+  const stepList = steps ? steps.split('\n').filter(line => line.trim()) : [];
 
   return {
     id: `custom-${Date.now()}`,
     name: name.trim(),
     ingredients: ingredientList,
     steps: stepList,
-    ageGroups: [ageGroup],
+    ageGroups: [fallbackAge],
     tags: ['自定义'],
     category: '自定义',
     dishType,

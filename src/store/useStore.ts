@@ -10,18 +10,29 @@ interface AppState {
   weeklyPlan: WeeklyPlan | null;
   // 是否已完成设置
   isSetupComplete: boolean;
+  // 用户自定义菜谱库
+  customRecipes: Recipe[];
+  // 收藏的菜谱ID
+  favoriteIds: string[];
+  // 宝宝姓名
+  babyName: string;
 
   // 操作方法
   setBabyAge: (age: UserSettings['babyAge']) => void;
   setAllergies: (allergies: string[]) => void;
   setDislikes: (dislikes: string[]) => void;
   setLikes: (likes: string[]) => void;
+  setBabyName: (name: string) => void;
   generatePlan: () => void;
   regenerateMeal: (day: DayOfWeek, mealType: MealType) => void;
   regenerateDish: (day: DayOfWeek, mealType: MealType, dishIndex: number) => void;
   removeDish: (day: DayOfWeek, mealType: MealType, dishIndex: number) => void;
   swapMeals: (day: DayOfWeek) => void;
   setCustomMeal: (day: DayOfWeek, mealType: MealType, mealPlan: MealPlan) => void;
+  addDish: (day: DayOfWeek, mealType: MealType, dish: Recipe) => void;
+  addCustomRecipe: (recipe: Recipe) => void;
+  removeCustomRecipe: (id: string) => void;
+  toggleFavorite: (id: string) => void;
   resetSettings: () => void;
 }
 
@@ -38,6 +49,9 @@ export const useStore = create<AppState>()(
       settings: defaultSettings,
       weeklyPlan: null,
       isSetupComplete: false,
+      customRecipes: [],
+      favoriteIds: [],
+      babyName: '',
 
       setBabyAge: (age) => set((state) => ({
         settings: { ...state.settings, babyAge: age },
@@ -55,16 +69,18 @@ export const useStore = create<AppState>()(
         settings: { ...state.settings, likes },
       })),
 
+      setBabyName: (name) => set({ babyName: name }),
+
       generatePlan: () => {
-        const { settings } = get();
+        const { settings, customRecipes } = get();
         if (!settings.babyAge) return;
 
-        const plan = generateWeeklyPlan(settings);
+        const plan = generateWeeklyPlan(settings, customRecipes);
         set({ weeklyPlan: plan, isSetupComplete: true });
       },
 
       regenerateMeal: (day, mealType) => {
-        const { weeklyPlan, settings } = get();
+        const { weeklyPlan, settings, customRecipes } = get();
         if (!weeklyPlan || !settings.babyAge) return;
 
         // 收集所有已使用的食谱
@@ -76,7 +92,7 @@ export const useStore = create<AppState>()(
         }
 
         // 重新生成
-        const newMeal = regenerateMeal(settings, usedRecipes, mealType);
+        const newMeal = regenerateMeal(settings, customRecipes, usedRecipes, mealType);
 
         set((state) => ({
           weeklyPlan: {
@@ -90,7 +106,7 @@ export const useStore = create<AppState>()(
       },
 
       regenerateDish: (day, mealType, dishIndex) => {
-        const { weeklyPlan, settings } = get();
+        const { weeklyPlan, settings, customRecipes } = get();
         if (!weeklyPlan || !settings.babyAge) return;
 
         const dayPlan = weeklyPlan[day];
@@ -110,7 +126,7 @@ export const useStore = create<AppState>()(
           }
         }
 
-        const newDish = regenerateDish(settings, usedRecipes, targetDish.dishType);
+        const newDish = regenerateDish(settings, customRecipes, usedRecipes, targetDish.dishType);
         if (!newDish) return;
 
         const newDishes = [...mealPlan.dishes];
@@ -177,22 +193,77 @@ export const useStore = create<AppState>()(
         }));
       },
 
+      addDish: (day, mealType, dish) => {
+        set((state) => {
+          if (!state.weeklyPlan) return state;
+          const mealPlan = state.weeklyPlan[day][mealType];
+          return {
+            weeklyPlan: {
+              ...state.weeklyPlan,
+              [day]: {
+                ...state.weeklyPlan[day],
+                [mealType]: {
+                  dishes: [...mealPlan.dishes, dish],
+                },
+              },
+            },
+          };
+        });
+      },
+
+      addCustomRecipe: (recipe) => set((state) => {
+        const exists = state.customRecipes.some(r => r.id === recipe.id);
+        if (exists) return state;
+        return { customRecipes: [...state.customRecipes, recipe] };
+      }),
+
+      removeCustomRecipe: (id) => set((state) => ({
+        customRecipes: state.customRecipes.filter(r => r.id !== id),
+      })),
+
+      toggleFavorite: (id) => set((state) => {
+        const exists = state.favoriteIds.includes(id);
+        return {
+          favoriteIds: exists
+            ? state.favoriteIds.filter(fid => fid !== id)
+            : [...state.favoriteIds, id],
+        };
+      }),
+
       resetSettings: () => set({
         settings: defaultSettings,
         weeklyPlan: null,
         isSetupComplete: false,
+        customRecipes: [],
+        favoriteIds: [],
+        babyName: '',
       }),
     }),
     {
       name: 'baby-recipe-storage',
-      version: 6,
+      version: 32,
       migrate: (persistedState: any, version: number) => {
-        // 旧版本数据不兼容，清空重新生成
-        if (version < 6) {
+        if (version < 30) {
           return {
             settings: persistedState?.settings || defaultSettings,
             weeklyPlan: null,
             isSetupComplete: false,
+            customRecipes: persistedState?.customRecipes || [],
+            favoriteIds: persistedState?.favoriteIds || [],
+            babyName: persistedState?.babyName || '',
+          };
+        }
+        if (version < 31) {
+          return {
+            ...persistedState,
+            favoriteIds: persistedState?.favoriteIds || [],
+            babyName: persistedState?.babyName || '',
+          };
+        }
+        if (version < 32) {
+          return {
+            ...persistedState,
+            babyName: persistedState?.babyName || '',
           };
         }
         return persistedState;

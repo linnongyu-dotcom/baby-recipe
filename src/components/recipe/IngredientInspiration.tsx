@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Lightbulb, Check, X as XIcon } from 'lucide-react';
-import { Recipe, MealPlan, DISH_TYPE_LABELS } from '@/types';
+import { Search, Lightbulb, Check } from 'lucide-react';
+import { Recipe, DISH_TYPE_LABELS } from '@/types';
 import { useStore } from '@/store/useStore';
 import { findRecipesByIngredients } from '@/utils/recipeGenerator';
 
@@ -15,12 +15,12 @@ export function IngredientInspiration({ onSelect, onCancel }: IngredientInspirat
   const [results, setResults] = useState<Recipe[]>([]);
   const [searched, setSearched] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const { settings } = useStore();
+  const { settings, customRecipes } = useStore();
 
   const handleSearch = () => {
     if (!input.trim() || !settings.babyAge) return;
     const ingredients = input.split(/[,，、\s]+/).filter(Boolean);
-    const found = findRecipesByIngredients(settings, ingredients);
+    const found = findRecipesByIngredients(settings, customRecipes, ingredients);
     setResults(found);
     setSearched(true);
   };

@@ -16,8 +16,8 @@ export function CustomRecipeForm({ onSave, onCancel }: CustomRecipeFormProps) {
   const [steps, setSteps] = useState('');
 
   const handleSave = () => {
-    if (!name.trim() || !ingredients.trim() || !steps.trim()) {
-      alert('请填写完整信息');
+    if (!name.trim()) {
+      alert('请填写菜名');
       return;
     }
 

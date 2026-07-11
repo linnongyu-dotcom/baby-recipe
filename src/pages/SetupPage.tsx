@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Baby, AlertTriangle, Heart, ThumbsDown, Plus, X } from 'lucide-react';
+import { Baby, AlertTriangle, Heart, ThumbsDown, Plus, X, User } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '@/store/useStore';
 import { Button } from '@/components/common/Button';
@@ -156,10 +156,12 @@ export function SetupPage() {
   const navigate = useNavigate();
   const {
     settings,
+    babyName,
     setBabyAge,
     setAllergies,
     setDislikes,
     setLikes,
+    setBabyName,
     generatePlan,
   } = useStore();
 
@@ -248,6 +250,34 @@ export function SetupPage() {
                 </motion.button>
               ))}
             </div>
+          </Card>
+        </motion.div>
+
+        {/* 宝宝姓名 */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15 }}
+          className="mb-6"
+        >
+          <Card hoverable={false} className="p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <User className="w-5 h-5 text-purple-500" />
+              <h2 className="text-lg font-semibold text-gray-800">
+                宝宝姓名 <span className="text-gray-400 text-sm">(可选)</span>
+              </h2>
+              {babyName && (
+                <span className="text-xs text-gray-400">{babyName.length}/8</span>
+              )}
+            </div>
+            <input
+              type="text"
+              value={babyName}
+              onChange={(e) => setBabyName(e.target.value)}
+              placeholder="输入宝宝的名字或小名"
+              maxLength={8}
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none text-gray-700 text-lg transition-colors"
+            />
           </Card>
         </motion.div>
 

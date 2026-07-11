@@ -1,11 +1,13 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
-import { useState } from 'react';
-import { ChefHat, Settings, Download, ChevronDown } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { ChefHat, Settings, Download, ChevronDown, Loader2, Share2, Check } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { Button } from '@/components/common/Button';
 import { RecipeCard } from '@/components/recipe/RecipeCard';
-import { DAYS_OF_WEEK, DAY_LABELS, DayOfWeek, MealType, AGE_GROUP_LABELS, DISH_TYPE_LABELS, AgeGroup } from '@/types';
+import { DAYS_OF_WEEK, DAY_LABELS, DayOfWeek, AGE_GROUP_LABELS, AgeGroup, WeeklyPlan } from '@/types';
+import { downloadRecipePDF } from '@/utils/pdfGenerator';
+import { encodeShareData, decodeShareData } from '@/utils/shareUtils';
 
 interface NutritionGuide {
   title: string;
@@ -102,55 +104,64 @@ function getNutritionGuide(age: AgeGroup): NutritionGuide {
 
 export function RecipePage() {
   const navigate = useNavigate();
-  const { weeklyPlan, settings, regenerateMeal, regenerateDish, removeDish, swapMeals, setCustomMeal } = useStore();
+  const [searchParams] = useSearchParams();
+  const store = useStore();
+  const { weeklyPlan, settings, babyName, regenerateMeal, regenerateDish, removeDish, swapMeals, setCustomMeal, addDish } = store;
 
-  if (!weeklyPlan) {
+  const shareParam = searchParams.get('share');
+  const [sharedData, setSharedData] = useState<{ weeklyPlan: WeeklyPlan; ageLabel: string } | null>(null);
+  const [showNutritionGuide, setShowNutritionGuide] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
+
+  useEffect(() => {
+    if (shareParam) {
+      const decoded = decodeShareData(shareParam);
+      if (decoded) setSharedData(decoded);
+    }
+  }, [shareParam]);
+
+  const isShareMode = !!sharedData;
+  const displayPlan = sharedData?.weeklyPlan || weeklyPlan;
+  const displayAgeLabel = sharedData?.ageLabel || (settings.babyAge ? AGE_GROUP_LABELS[settings.babyAge] : '');
+
+  if (!weeklyPlan && !isShareMode) {
     navigate('/setup');
     return null;
   }
 
-  const handleDownload = () => {
+  const handleShare = async () => {
     if (!weeklyPlan) return;
-
-    const MEAL_LABELS: Record<MealType, string> = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐' };
-    let text = '宝宝一周营养食谱\n';
-    text += `宝宝年龄：${ageLabel}\n`;
-    text += `生成日期：${new Date().toLocaleDateString('zh-CN')}\n`;
-    text += '='.repeat(40) + '\n\n';
-
-    for (const day of DAYS_OF_WEEK) {
-      const dayPlan = weeklyPlan[day];
-      text += `【${DAY_LABELS[day]}】\n`;
-      for (const meal of ['breakfast', 'lunch', 'dinner'] as MealType[]) {
-        const mealPlan = dayPlan[meal];
-        text += `  ${MEAL_LABELS[meal]}（${mealPlan.dishes.length}道菜）：\n`;
-        for (const dish of mealPlan.dishes) {
-          text += `    - ${dish.name}`;
-          const ingredients = dish.ingredients.map(i => `${i.name}${i.amount}`).join('、');
-          text += ` | 食材：${ingredients}`;
-          text += ` | 做法：${dish.steps.join(' → ')}\n`;
-        }
-      }
-      text += '\n';
+    const ageLabel = settings.babyAge ? AGE_GROUP_LABELS[settings.babyAge] : '宝宝';
+    const encoded = encodeShareData(weeklyPlan, ageLabel);
+    const url = `${window.location.origin}/recipe?share=${encoded}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 2000);
+    } catch {
+      prompt('复制以下链接分享给家人：', url);
     }
-
-    const blob = new Blob(['\uFEFF' + text], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `宝宝食谱_${ageLabel}_${new Date().toLocaleDateString('zh-CN')}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
   };
 
-  const ageLabel = settings.babyAge ? AGE_GROUP_LABELS[settings.babyAge] : '';
-  const [showNutritionGuide, setShowNutritionGuide] = useState(false);
+  const handleDownload = async () => {
+    if (!displayPlan) return;
+    setDownloading(true);
+    try {
+      await downloadRecipePDF(displayPlan, settings.babyAge);
+    } catch (e) {
+      console.error('PDF生成失败', e);
+      alert('PDF生成失败，请重试');
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   const nutritionGuide = settings.babyAge ? getNutritionGuide(settings.babyAge) : null;
 
   // 计算一天营养统计
   const getDayNutritionSummary = (day: DayOfWeek) => {
-    const dayPlan = weeklyPlan[day];
+    const dayPlan = displayPlan[day];
     if (!dayPlan || !dayPlan.breakfast || !dayPlan.lunch || !dayPlan.dinner) {
       return '0道菜';
     }
@@ -165,36 +176,60 @@ export function RecipePage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-100 via-purple-50 to-pink-50 py-8 px-4">
       <div className="max-w-5xl mx-auto">
+        {/* 分享模式提示 */}
+        {isShareMode && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-4 p-4 bg-green-50 border border-green-200 rounded-xl flex items-center justify-between"
+          >
+            <div>
+              <p className="font-semibold text-green-800">📋 家人分享的宝宝食谱</p>
+              <p className="text-sm text-green-600">{displayAgeLabel}</p>
+            </div>
+            <p className="text-xs text-green-500">只读模式 · 仅供参考</p>
+          </motion.div>
+        )}
+
         {/* 标题栏 */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex items-center justify-between mb-6"
+          className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6"
         >
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-              <ChefHat className="w-8 h-8 text-purple-500" />
-              一周营养食谱
+          <div className="min-w-0">
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-800 flex items-center gap-2">
+              <ChefHat className="w-6 h-6 sm:w-8 sm:h-8 text-purple-500 flex-shrink-0" />
+              {babyName && !isShareMode && <span className="text-purple-600 truncate">{babyName} </span>}
+              <span className="whitespace-nowrap">{isShareMode ? '分享食谱' : '一周营养食谱'}</span>
             </h1>
-            <p className="text-gray-600 mt-1 text-sm">
-              宝宝年龄：{ageLabel} · 共 7 天 × 3 餐 = 21 餐
+            <p className="text-gray-600 mt-1 text-xs sm:text-sm">
+              {displayAgeLabel} · 共 7 天 × 3 餐 = 21 餐
             </p>
           </div>
 
-          <div className="flex gap-2">
-            <Button onClick={() => navigate('/setup')} variant="outline" size="sm">
-              <Settings className="w-4 h-4" />
-              重新设置
-            </Button>
-            <Button onClick={handleDownload} variant="secondary" size="sm">
-              <Download className="w-4 h-4" />
-              下载食谱
+          <div className="flex gap-2 flex-shrink-0">
+            {!isShareMode && (
+              <>
+                <Button onClick={() => navigate('/setup')} variant="outline" size="sm">
+                  <Settings className="w-4 h-4" />
+                  设置
+                </Button>
+                <Button onClick={handleShare} variant="outline" size="sm">
+                  {shareCopied ? <Check className="w-4 h-4 text-green-500" /> : <Share2 className="w-4 h-4" />}
+                  {shareCopied ? '已复制' : '分享'}
+                </Button>
+              </>
+            )}
+            <Button onClick={handleDownload} variant="secondary" size="sm" disabled={downloading}>
+              {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+              {downloading ? '生成中…' : '下载'}
             </Button>
           </div>
         </motion.div>
 
         {/* 营养科学指南 */}
-        {nutritionGuide && (
+        {!isShareMode && nutritionGuide && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -264,6 +299,7 @@ export function RecipePage() {
         )}
 
         {/* 快捷说明 */}
+        {!isShareMode && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -273,16 +309,15 @@ export function RecipePage() {
             <span>💡 点击菜品展开食材做法</span>
             <span>🔄 换单道菜</span>
             <span>✕ 删除菜品</span>
-            <span>💡 食材灵感</span>
-            <span>📝 自定义</span>
             <span>⇅ 午晚餐互换</span>
           </div>
         </motion.div>
+        )}
 
         {/* 一周食谱 */}
         <div className="space-y-6">
           {DAYS_OF_WEEK.map((day, dayIndex) => {
-            const dayPlan = weeklyPlan[day];
+            const dayPlan = displayPlan[day];
             return (
               <motion.div
                 key={day}
@@ -309,20 +344,19 @@ export function RecipePage() {
                   <RecipeCard
                     mealPlan={dayPlan.breakfast}
                     mealType="breakfast"
-                    day={day}
                     onRefresh={() => regenerateMeal(day, 'breakfast')}
                     onReplaceDish={(idx) => regenerateDish(day, 'breakfast', idx)}
                     onRemoveDish={(idx) => removeDish(day, 'breakfast', idx)}
                     onInspiration={(recipe) =>
                       setCustomMeal(day, 'breakfast', { dishes: [...dayPlan.breakfast.dishes, recipe] })
                     }
-                    onCustom={(plan) => setCustomMeal(day, 'breakfast', plan)}
+                    onAddDish={(recipe) => addDish(day, 'breakfast', recipe)}
+                    readOnly={isShareMode}
                   />
                   <div className="space-y-2">
                     <RecipeCard
                       mealPlan={dayPlan.lunch}
                       mealType="lunch"
-                      day={day}
                       onRefresh={() => regenerateMeal(day, 'lunch')}
                       onReplaceDish={(idx) => regenerateDish(day, 'lunch', idx)}
                       onRemoveDish={(idx) => removeDish(day, 'lunch', idx)}
@@ -330,14 +364,14 @@ export function RecipePage() {
                         setCustomMeal(day, 'lunch', { dishes: [...dayPlan.lunch.dishes, recipe] })
                       }
                       onSwap={() => swapMeals(day)}
-                      onCustom={(plan) => setCustomMeal(day, 'lunch', plan)}
+                      onAddDish={(recipe) => addDish(day, 'lunch', recipe)}
+                      readOnly={isShareMode}
                     />
                   </div>
                   <div className="space-y-2">
                     <RecipeCard
                       mealPlan={dayPlan.dinner}
                       mealType="dinner"
-                      day={day}
                       onRefresh={() => regenerateMeal(day, 'dinner')}
                       onReplaceDish={(idx) => regenerateDish(day, 'dinner', idx)}
                       onRemoveDish={(idx) => removeDish(day, 'dinner', idx)}
@@ -345,7 +379,8 @@ export function RecipePage() {
                         setCustomMeal(day, 'dinner', { dishes: [...dayPlan.dinner.dishes, recipe] })
                       }
                       onSwap={() => swapMeals(day)}
-                      onCustom={(plan) => setCustomMeal(day, 'dinner', plan)}
+                      onAddDish={(recipe) => addDish(day, 'dinner', recipe)}
+                      readOnly={isShareMode}
                     />
                   </div>
                 </div>
@@ -355,6 +390,7 @@ export function RecipePage() {
         </div>
 
         {/* 底部提示 */}
+        {!isShareMode && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -364,6 +400,7 @@ export function RecipePage() {
           <p>💡 点击菜品查看详细做法，点击 🔄 换单道菜，点击"全部换一换"刷新整餐</p>
           <p className="mt-1">📝 点击"添加自定义"可以输入自己的菜谱</p>
         </motion.div>
+        )}
       </div>
     </div>
   );

@@ -1,41 +1,43 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { RefreshCw, ArrowUpDown, Plus, Eye, X, Lightbulb } from 'lucide-react';
-import { Recipe, DayOfWeek, MealType, MealPlan, DISH_TYPE_LABELS, DISH_TYPE_ICONS, DishType } from '@/types';
+import { RefreshCw, ArrowUpDown, Plus, Eye, X, Lightbulb, Heart } from 'lucide-react';
+import { Recipe, MealType, MealPlan, DISH_TYPE_ICONS, DishType } from '@/types';
 import { Card } from '@/components/common/Card';
 import { Modal } from '@/components/common/Modal';
 import { RecipeDetail } from './RecipeDetail';
-import { CustomRecipeForm } from './CustomRecipeForm';
+import { AddDishModal } from './AddDishModal';
 import { IngredientInspiration } from './IngredientInspiration';
+import { useStore } from '@/store/useStore';
 
 interface RecipeCardProps {
   mealPlan: MealPlan;
   mealType: MealType;
-  day: DayOfWeek;
   onRefresh: () => void;
   onReplaceDish: (dishIndex: number) => void;
   onRemoveDish: (dishIndex: number) => void;
   onSwap?: () => void;
-  onCustom: (mealPlan: MealPlan) => void;
+  onAddDish: (recipe: Recipe) => void;
   onInspiration: (recipe: Recipe) => void;
+  readOnly?: boolean;
 }
 
 export function RecipeCard({
   mealPlan,
   mealType,
-  day,
   onRefresh,
   onReplaceDish,
   onRemoveDish,
   onSwap,
-  onCustom,
+  onAddDish,
   onInspiration,
+  readOnly,
 }: RecipeCardProps) {
   const [showDetail, setShowDetail] = useState(false);
-  const [showCustom, setShowCustom] = useState(false);
+  const [showAddDish, setShowAddDish] = useState(false);
   const [showInspiration, setShowInspiration] = useState(false);
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const { favoriteIds, toggleFavorite } = useStore();
 
   const mealIcon = mealType === 'breakfast' ? '🌅' : mealType === 'lunch' ? '☀️' : '🌙';
   const mealLabel = mealType === 'breakfast' ? '早餐' : mealType === 'lunch' ? '午餐' : '晚餐';
@@ -43,12 +45,6 @@ export function RecipeCard({
   const handleViewDetail = (recipe: Recipe) => {
     setSelectedRecipe(recipe);
     setShowDetail(true);
-  };
-
-  const handleCustomSave = (newRecipe: Recipe) => {
-    // 追加到当前菜品列表，不替换任何菜
-    onCustom({ dishes: [...mealPlan.dishes, newRecipe] });
-    setShowCustom(false);
   };
 
   const toggleExpand = (id: string) => {
@@ -104,7 +100,7 @@ export function RecipeCard({
             .filter((dt) => groupedDishes[dt] && groupedDishes[dt].length > 0)
             .map((dishType) => (
               <div key={dishType} className="space-y-2">
-                {groupedDishes[dishType].map((recipe, idx) => {
+                {groupedDishes[dishType].map((recipe) => {
                   const isExpanded = expandedIds.has(recipe.id);
                   const globalIndex = mealPlan.dishes.indexOf(recipe);
                   return (
@@ -136,6 +132,7 @@ export function RecipeCard({
                             ))}
                           </div>
                         </div>
+                        {!readOnly && (<>
                         <motion.button
                           whileHover={{ scale: 1.1 }}
                           whileTap={{ scale: 0.9 }}
@@ -171,6 +168,37 @@ export function RecipeCard({
                           title="删除"
                         >
                           <X className="w-3.5 h-3.5" />
+                        </motion.button>
+                        </>)}
+                        {readOnly && (
+                          <motion.button
+                            whileHover={{ scale: 1.1 }}
+                            whileTap={{ scale: 0.9 }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleViewDetail(recipe);
+                            }}
+                            className="p-1 rounded hover:bg-purple-100 text-purple-500 flex-shrink-0"
+                            title="查看详情"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </motion.button>
+                        )}
+                        <motion.button
+                          whileHover={{ scale: 1.2 }}
+                          whileTap={{ scale: 0.8 }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleFavorite(recipe.id);
+                          }}
+                          className={`p-1 rounded flex-shrink-0 transition-colors ${
+                            favoriteIds.includes(recipe.id)
+                              ? 'text-red-400 hover:bg-red-50'
+                              : 'text-gray-300 hover:text-red-300 hover:bg-red-50'
+                          }`}
+                          title={favoriteIds.includes(recipe.id) ? '取消收藏' : '收藏'}
+                        >
+                          <Heart className="w-3.5 h-3.5" fill={favoriteIds.includes(recipe.id) ? 'currentColor' : 'none'} />
                         </motion.button>
                       </motion.div>
 
@@ -229,6 +257,7 @@ export function RecipeCard({
         </div>
 
         {/* 操作按钮 */}
+        {!readOnly && (
         <div className="flex gap-2 pt-3 border-t border-gray-100">
           <motion.button
             whileHover={{ scale: 1.05 }}
@@ -251,13 +280,14 @@ export function RecipeCard({
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
-            onClick={() => setShowCustom(true)}
-            className="flex-1 flex items-center justify-center gap-1 px-2 py-2 bg-gradient-to-r from-purple-100 to-purple-200 text-purple-600 rounded-lg text-sm hover:from-purple-200 hover:to-purple-300 transition-all"
+            onClick={() => setShowAddDish(true)}
+            className="flex-1 flex items-center justify-center gap-1 px-2 py-2 bg-gradient-to-r from-green-100 to-green-200 text-green-600 rounded-lg text-sm hover:from-green-200 hover:to-green-300 transition-all"
           >
             <Plus className="w-4 h-4" />
-            自定义
+            添加菜品
           </motion.button>
         </div>
+        )}
       </Card>
 
       {/* 详情弹窗 */}
@@ -269,15 +299,19 @@ export function RecipeCard({
         {selectedRecipe && <RecipeDetail recipe={selectedRecipe} />}
       </Modal>
 
-      {/* 自定义弹窗 */}
+      {/* 添加菜品弹窗 */}
       <Modal
-        isOpen={showCustom}
-        onClose={() => setShowCustom(false)}
-        title="添加自定义食谱"
+        isOpen={showAddDish}
+        onClose={() => setShowAddDish(false)}
+        title="添加菜品"
       >
-        <CustomRecipeForm
-          onSave={handleCustomSave}
-          onCancel={() => setShowCustom(false)}
+        <AddDishModal
+          onAdd={(recipe) => {
+            onAddDish(recipe);
+            setShowAddDish(false);
+          }}
+          onCancel={() => setShowAddDish(false)}
+          usedIds={new Set(mealPlan.dishes.map(d => d.id))}
         />
       </Modal>
 

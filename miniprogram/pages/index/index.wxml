@@ -1,0 +1,2 @@
+<!-- 宝宝食谱定制助手 -->
+<web-view src="{{webUrl}}" bindmessage="onMessage" bindload="onLoad" binderror="onError"></web-view>
