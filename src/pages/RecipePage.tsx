@@ -194,7 +194,7 @@ export function RecipePage() {
             className="mb-4 p-4 bg-green-50 border border-green-200 rounded-xl flex items-center justify-between"
           >
             <div>
-              <p className="font-semibold text-green-800">📋 家人分享的宝宝食谱</p>
+              <p className="font-semibold text-green-800">📋 家人分享的饭小宝食谱</p>
               <p className="text-sm text-green-600">{displayAgeLabel}</p>
             </div>
             <p className="text-xs text-green-500">只读模式 · 仅供参考</p>
