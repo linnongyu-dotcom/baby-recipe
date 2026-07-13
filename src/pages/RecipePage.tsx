@@ -210,12 +210,21 @@ export function RecipePage() {
           <div className="min-w-0">
             <h1 className="text-xl sm:text-2xl font-bold text-gray-800 flex items-center gap-2">
               <ChefHat className="w-6 h-6 sm:w-8 sm:h-8 text-purple-500 flex-shrink-0" />
-              {babyName && !isShareMode && <span className="text-purple-600 truncate">{babyName} </span>}
-              <span className="whitespace-nowrap">{isShareMode ? '分享食谱' : '一周营养食谱'}</span>
+              {isShareMode ? (
+                <span className="whitespace-nowrap">分享食谱</span>
+              ) : (
+                <span className="whitespace-nowrap">
+                  {babyName ? `${babyName} 今天吃什么？` : '今天吃什么？'}
+                </span>
+              )}
             </h1>
-            <p className="text-gray-600 mt-1 text-xs sm:text-sm">
-              {displayAgeLabel} · 共 7 天 × 3 餐 = 21 餐
-            </p>
+            {isShareMode ? (
+              <p className="text-gray-600 mt-1 text-xs sm:text-sm">
+                {displayAgeLabel} · 共 7 天 × 3 餐 = 21 餐
+              </p>
+            ) : (
+              <p className="text-gray-600 mt-1 text-xs sm:text-sm">科学搭配每一餐，让喂养更简单</p>
+            )}
           </div>
 
           <div className="flex gap-2 flex-shrink-0">
