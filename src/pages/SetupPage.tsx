@@ -157,6 +157,7 @@ export function SetupPage() {
   const {
     settings,
     babyName,
+    isSetupComplete,
     setBabyAge,
     setAllergies,
     setDislikes,
@@ -164,6 +165,8 @@ export function SetupPage() {
     setBabyName,
     generatePlan,
   } = useStore();
+
+  const isSettingsMode = isSetupComplete;
 
   const handleAgeSelect = (age: AgeGroup) => {
     setBabyAge(age);
@@ -211,12 +214,25 @@ export function SetupPage() {
           animate={{ opacity: 1, y: 0 }}
           className="text-center mb-8"
         >
-          <h1 className="text-3xl font-bold text-gray-800 mb-2">
-            🍼 宝宝食谱定制助手
-          </h1>
-          <p className="text-gray-600">
-            设置宝宝信息，为您生成专属的营养食谱
-          </p>
+          {isSettingsMode ? (
+            <>
+              <h1 className="text-3xl font-bold text-gray-800 mb-2">
+                ⚙️ 设置
+              </h1>
+              <p className="text-gray-600">
+                完善宝宝信息，推荐会越来越符合宝宝的饮食习惯。
+              </p>
+            </>
+          ) : (
+            <>
+              <h1 className="text-3xl font-bold text-gray-800 mb-2">
+                少一点纠结，多一点陪伴。
+              </h1>
+              <p className="text-gray-600">
+                根据宝宝年龄、饮食需求和过敏信息，为你安排每一餐，让科学喂养变得简单。
+              </p>
+            </>
+          )}
         </motion.div>
 
         {/* 年龄选择 */}
@@ -301,45 +317,49 @@ export function SetupPage() {
           </Card>
         </motion.div>
 
-        {/* 不喜欢的食物 */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className="mb-6"
-        >
-          <Card hoverable={false} className="p-6">
-            <FoodSelector
-              title="不喜欢的食物"
-              icon={<ThumbsDown className="w-5 h-5 text-gray-500" />}
-              presetItems={COMMON_FOODS}
-              selected={settings.dislikes}
-              onToggle={handleDislikeToggle}
-              onAdd={handleDislikeToggle}
-              variant="default"
-            />
-          </Card>
-        </motion.div>
+        {/* 不喜欢的食物（仅设置模式） */}
+        {isSettingsMode && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+            className="mb-6"
+          >
+            <Card hoverable={false} className="p-6">
+              <FoodSelector
+                title="不喜欢的食物"
+                icon={<ThumbsDown className="w-5 h-5 text-gray-500" />}
+                presetItems={COMMON_FOODS}
+                selected={settings.dislikes}
+                onToggle={handleDislikeToggle}
+                onAdd={handleDislikeToggle}
+                variant="default"
+              />
+            </Card>
+          </motion.div>
+        )}
 
-        {/* 喜欢的食物 */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 }}
-          className="mb-8"
-        >
-          <Card hoverable={false} className="p-6">
-            <FoodSelector
-              title="喜欢的食物"
-              icon={<Heart className="w-5 h-5 text-purple-500" />}
-              presetItems={COMMON_FOODS}
-              selected={settings.likes}
-              onToggle={handleLikeToggle}
-              onAdd={handleLikeToggle}
-              variant="success"
-            />
-          </Card>
-        </motion.div>
+        {/* 喜欢的食物（仅设置模式） */}
+        {isSettingsMode && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4 }}
+            className="mb-8"
+          >
+            <Card hoverable={false} className="p-6">
+              <FoodSelector
+                title="喜欢的食物"
+                icon={<Heart className="w-5 h-5 text-purple-500" />}
+                presetItems={COMMON_FOODS}
+                selected={settings.likes}
+                onToggle={handleLikeToggle}
+                onAdd={handleLikeToggle}
+                variant="success"
+              />
+            </Card>
+          </motion.div>
+        )}
 
         {/* 生成按钮 */}
         <motion.div
@@ -354,7 +374,7 @@ export function SetupPage() {
             size="lg"
             className="px-12"
           >
-            ✨ 生成一周食谱
+            {isSettingsMode ? '✨ 重新生成食谱' : '✨ 开始推荐'}
           </Button>
           {!settings.babyAge && (
             <p className="text-sm text-gray-500 mt-2">请先选择宝宝年龄</p>

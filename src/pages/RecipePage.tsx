@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { ChefHat, Settings, Download, ChevronDown, Loader2, Share2, Check } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { Button } from '@/components/common/Button';
@@ -113,6 +113,7 @@ export function RecipePage() {
   const [showNutritionGuide, setShowNutritionGuide] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
+  const [showWeeklyPlan, setShowWeeklyPlan] = useState(false);
 
   useEffect(() => {
     if (shareParam) {
@@ -124,6 +125,15 @@ export function RecipePage() {
   const isShareMode = !!sharedData;
   const displayPlan = sharedData?.weeklyPlan || weeklyPlan;
   const displayAgeLabel = sharedData?.ageLabel || (settings.babyAge ? AGE_GROUP_LABELS[settings.babyAge] : '');
+
+  const todayDay = useMemo((): DayOfWeek => {
+    const jsDay = new Date().getDay();
+    const map: Record<number, DayOfWeek> = {
+      1: 'monday', 2: 'tuesday', 3: 'wednesday', 4: 'thursday',
+      5: 'friday', 6: 'saturday', 0: 'sunday',
+    };
+    return map[jsDay];
+  }, []);
 
   if (!weeklyPlan && !isShareMode) {
     navigate('/setup');
@@ -314,80 +324,176 @@ export function RecipePage() {
         </motion.div>
         )}
 
-        {/* 一周食谱 */}
-        <div className="space-y-6">
-          {DAYS_OF_WEEK.map((day, dayIndex) => {
-            const dayPlan = displayPlan[day];
-            return (
-              <motion.div
-                key={day}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: dayIndex * 0.05 }}
-                className="bg-white rounded-2xl shadow-lg p-6"
-              >
-                {/* 日期标题 */}
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-xl font-semibold text-gray-800 flex items-center gap-2">
-                    <span className="w-8 h-8 bg-gradient-to-r from-purple-400 to-purple-500 text-white rounded-full flex items-center justify-center text-sm">
-                      {dayIndex + 1}
-                    </span>
-                    {DAY_LABELS[day]}
-                    <span className="text-sm text-gray-500 font-normal">
-                      ({getDayNutritionSummary(day)})
-                    </span>
-                  </h2>
-                </div>
+        {/* 今日推荐 */}
+        {displayPlan && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6 bg-white rounded-2xl shadow-lg p-6"
+          >
+            <div className="flex items-center gap-2 mb-4">
+              <span className="text-2xl">🍽</span>
+              <h2 className="text-xl font-semibold text-gray-800">今日推荐</h2>
+              <span className="text-sm text-gray-500">{DAY_LABELS[todayDay]}</span>
+            </div>
+            <div className="grid md:grid-cols-3 gap-4">
+              <RecipeCard
+                mealPlan={displayPlan[todayDay].breakfast}
+                mealType="breakfast"
+                onRefresh={() => regenerateMeal(todayDay, 'breakfast')}
+                onReplaceDish={(idx) => regenerateDish(todayDay, 'breakfast', idx)}
+                onRemoveDish={(idx) => removeDish(todayDay, 'breakfast', idx)}
+                onInspiration={(recipe) =>
+                  setCustomMeal(todayDay, 'breakfast', { dishes: [...displayPlan[todayDay].breakfast.dishes, recipe] })
+                }
+                onAddDish={(recipe) => addDish(todayDay, 'breakfast', recipe)}
+                readOnly={isShareMode}
+              />
+              <div className="space-y-2">
+                <RecipeCard
+                  mealPlan={displayPlan[todayDay].lunch}
+                  mealType="lunch"
+                  onRefresh={() => regenerateMeal(todayDay, 'lunch')}
+                  onReplaceDish={(idx) => regenerateDish(todayDay, 'lunch', idx)}
+                  onRemoveDish={(idx) => removeDish(todayDay, 'lunch', idx)}
+                  onInspiration={(recipe) =>
+                    setCustomMeal(todayDay, 'lunch', { dishes: [...displayPlan[todayDay].lunch.dishes, recipe] })
+                  }
+                  onSwap={() => swapMeals(todayDay)}
+                  onAddDish={(recipe) => addDish(todayDay, 'lunch', recipe)}
+                  readOnly={isShareMode}
+                />
+              </div>
+              <div className="space-y-2">
+                <RecipeCard
+                  mealPlan={displayPlan[todayDay].dinner}
+                  mealType="dinner"
+                  onRefresh={() => regenerateMeal(todayDay, 'dinner')}
+                  onReplaceDish={(idx) => regenerateDish(todayDay, 'dinner', idx)}
+                  onRemoveDish={(idx) => removeDish(todayDay, 'dinner', idx)}
+                  onInspiration={(recipe) =>
+                    setCustomMeal(todayDay, 'dinner', { dishes: [...displayPlan[todayDay].dinner.dishes, recipe] })
+                  }
+                  onSwap={() => swapMeals(todayDay)}
+                  onAddDish={(recipe) => addDish(todayDay, 'dinner', recipe)}
+                  readOnly={isShareMode}
+                />
+              </div>
+            </div>
+          </motion.div>
+        )}
 
-                {/* 早中晚三餐 */}
-                <div className="grid md:grid-cols-3 gap-4">
-                  <RecipeCard
-                    mealPlan={dayPlan.breakfast}
-                    mealType="breakfast"
-                    onRefresh={() => regenerateMeal(day, 'breakfast')}
-                    onReplaceDish={(idx) => regenerateDish(day, 'breakfast', idx)}
-                    onRemoveDish={(idx) => removeDish(day, 'breakfast', idx)}
-                    onInspiration={(recipe) =>
-                      setCustomMeal(day, 'breakfast', { dishes: [...dayPlan.breakfast.dishes, recipe] })
-                    }
-                    onAddDish={(recipe) => addDish(day, 'breakfast', recipe)}
-                    readOnly={isShareMode}
-                  />
-                  <div className="space-y-2">
-                    <RecipeCard
-                      mealPlan={dayPlan.lunch}
-                      mealType="lunch"
-                      onRefresh={() => regenerateMeal(day, 'lunch')}
-                      onReplaceDish={(idx) => regenerateDish(day, 'lunch', idx)}
-                      onRemoveDish={(idx) => removeDish(day, 'lunch', idx)}
-                      onInspiration={(recipe) =>
-                        setCustomMeal(day, 'lunch', { dishes: [...dayPlan.lunch.dishes, recipe] })
-                      }
-                      onSwap={() => swapMeals(day)}
-                      onAddDish={(recipe) => addDish(day, 'lunch', recipe)}
-                      readOnly={isShareMode}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <RecipeCard
-                      mealPlan={dayPlan.dinner}
-                      mealType="dinner"
-                      onRefresh={() => regenerateMeal(day, 'dinner')}
-                      onReplaceDish={(idx) => regenerateDish(day, 'dinner', idx)}
-                      onRemoveDish={(idx) => removeDish(day, 'dinner', idx)}
-                      onInspiration={(recipe) =>
-                        setCustomMeal(day, 'dinner', { dishes: [...dayPlan.dinner.dishes, recipe] })
-                      }
-                      onSwap={() => swapMeals(day)}
-                      onAddDish={(recipe) => addDish(day, 'dinner', recipe)}
-                      readOnly={isShareMode}
-                    />
-                  </div>
+        {/* 本周推荐 折叠 */}
+        {displayPlan && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.1 }}
+            className="mb-6 bg-white/60 backdrop-blur rounded-2xl border border-purple-100 overflow-hidden shadow-sm"
+          >
+            <button
+              onClick={() => setShowWeeklyPlan(!showWeeklyPlan)}
+              className="w-full p-5 flex items-center justify-between text-left hover:bg-purple-50/50 transition-colors"
+            >
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">📅</span>
+                  <span className="font-semibold text-gray-800 text-lg">本周推荐</span>
                 </div>
+                <p className="text-sm text-gray-500 mt-1">
+                  已为宝宝准备好本周食谱，点击即可查看
+                </p>
+              </div>
+              <motion.div
+                animate={{ rotate: showWeeklyPlan ? 180 : 0 }}
+                transition={{ duration: 0.2 }}
+              >
+                <ChevronDown className="w-5 h-5 text-gray-400" />
               </motion.div>
-            );
-          })}
-        </div>
+            </button>
+            <AnimatePresence>
+              {showWeeklyPlan && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  className="overflow-hidden"
+                >
+                  <div className="px-5 pb-5 space-y-6 border-t border-gray-100 pt-5">
+                    {DAYS_OF_WEEK.map((day, dayIndex) => {
+                      const dayPlan = displayPlan[day];
+                      return (
+                        <motion.div
+                          key={day}
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: dayIndex * 0.03 }}
+                          className="bg-white rounded-xl p-5 shadow-sm"
+                        >
+                          <div className="flex items-center justify-between mb-4">
+                            <h2 className="text-xl font-semibold text-gray-800 flex items-center gap-2">
+                              <span className="w-8 h-8 bg-gradient-to-r from-purple-400 to-purple-500 text-white rounded-full flex items-center justify-center text-sm">
+                                {dayIndex + 1}
+                              </span>
+                              {DAY_LABELS[day]}
+                              <span className="text-sm text-gray-500 font-normal">
+                                ({getDayNutritionSummary(day)})
+                              </span>
+                            </h2>
+                          </div>
+                          <div className="grid md:grid-cols-3 gap-4">
+                            <RecipeCard
+                              mealPlan={dayPlan.breakfast}
+                              mealType="breakfast"
+                              onRefresh={() => regenerateMeal(day, 'breakfast')}
+                              onReplaceDish={(idx) => regenerateDish(day, 'breakfast', idx)}
+                              onRemoveDish={(idx) => removeDish(day, 'breakfast', idx)}
+                              onInspiration={(recipe) =>
+                                setCustomMeal(day, 'breakfast', { dishes: [...dayPlan.breakfast.dishes, recipe] })
+                              }
+                              onAddDish={(recipe) => addDish(day, 'breakfast', recipe)}
+                              readOnly={isShareMode}
+                            />
+                            <div className="space-y-2">
+                              <RecipeCard
+                                mealPlan={dayPlan.lunch}
+                                mealType="lunch"
+                                onRefresh={() => regenerateMeal(day, 'lunch')}
+                                onReplaceDish={(idx) => regenerateDish(day, 'lunch', idx)}
+                                onRemoveDish={(idx) => removeDish(day, 'lunch', idx)}
+                                onInspiration={(recipe) =>
+                                  setCustomMeal(day, 'lunch', { dishes: [...dayPlan.lunch.dishes, recipe] })
+                                }
+                                onSwap={() => swapMeals(day)}
+                                onAddDish={(recipe) => addDish(day, 'lunch', recipe)}
+                                readOnly={isShareMode}
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <RecipeCard
+                                mealPlan={dayPlan.dinner}
+                                mealType="dinner"
+                                onRefresh={() => regenerateMeal(day, 'dinner')}
+                                onReplaceDish={(idx) => regenerateDish(day, 'dinner', idx)}
+                                onRemoveDish={(idx) => removeDish(day, 'dinner', idx)}
+                                onInspiration={(recipe) =>
+                                  setCustomMeal(day, 'dinner', { dishes: [...dayPlan.dinner.dishes, recipe] })
+                                }
+                                onSwap={() => swapMeals(day)}
+                                onAddDish={(recipe) => addDish(day, 'dinner', recipe)}
+                                readOnly={isShareMode}
+                              />
+                            </div>
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
+        )}
 
         {/* 底部提示 */}
         {!isShareMode && (
