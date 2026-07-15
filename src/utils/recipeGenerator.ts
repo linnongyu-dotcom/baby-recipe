@@ -1,5 +1,6 @@
 import { UserSettings, Recipe, WeeklyPlan, DayPlan, AgeGroup, MealPlan, MealType, DishType } from '../types';
 import { recipes } from '../data/recipes';
+import { lookupFoodCategory, isMeatOrEggLike, isVegetableCategory } from './foodDictionary';
 
 // 根据用户设置生成一周食谱
 export function generateWeeklyPlan(settings: UserSettings, customRecipes: Recipe[] = []): WeeklyPlan {
@@ -109,7 +110,6 @@ function createDayPlan(
   weekUsedIds: Set<string>
 ): DayPlan {
   const age = settings.babyAge!;
-  // 跟踪当天已使用的主食名称（米饭除外，米饭可重复）
   const dayUsedStapleNames = new Set<string>();
   const breakfast = createMealPlan(availableRecipes, 'breakfast', weekUsedIds, age, dayUsedStapleNames);
   const lunch = createMealPlan(availableRecipes, 'lunch', weekUsedIds, age, dayUsedStapleNames);
@@ -221,22 +221,12 @@ function createMealPlan(
     return false;
   };
 
-  // 判断主食是否为"复合主食"（本身含肉/鱼/蛋/豆腐，无需额外配荤菜）
-const MEAT_INGREDIENTS = ['猪肉', '牛肉', '鸡肉', '羊肉', '虾仁', '虾', '虾皮', '鱼', '鳕鱼', '三文鱼',
-  '猪肝', '鸡肝', '排骨', '牛腩', '肉末', '肉', '火腿', '鸭肉', '香肠',
-  '鸡蛋', '蛋', '豆腐', '豆腐干', '虾皮'];
-const VEGETABLE_INGREDIENTS = ['白菜', '青菜', '菠菜', '油菜', '生菜', '西兰花', '菜花', '胡萝卜',
-  '白萝卜', '土豆', '番茄', '西红柿', '黄瓜', '茄子', '南瓜', '冬瓜', '丝瓜', '苦瓜',
-  '芹菜', '韭菜', '豆芽', '青椒', '彩椒', '洋葱', '玉米', '豌豆', '毛豆', '四季豆',
-  '山药', '红薯', '紫薯', '芋头', '莲藕', '蘑菇', '香菇', '木耳', '银耳', '海带',
-  '紫菜', '西葫芦', '芦笋', '茭白', '秋葵', '空心菜', '娃娃菜', '油麦菜', '菜心', '菜'];
-
-const isCompositeStaple = (r: Recipe): boolean => {
-  return r.mainIngredients.some(ing => MEAT_INGREDIENTS.some(mi => ing.includes(mi)));
+  const isCompositeStaple = (r: Recipe): boolean => {
+  return r.mainIngredients.some(ing => isMeatOrEggLike(lookupFoodCategory(ing)));
 };
 
 const hasVegetables = (r: Recipe): boolean => {
-  return r.mainIngredients.some(ing => VEGETABLE_INGREDIENTS.some(vi => ing.includes(vi)));
+  return r.mainIngredients.some(ing => isVegetableCategory(lookupFoodCategory(ing)));
 };
 
 // 判断主食是否带汤水（馄饨、粥、汤面、疙瘩汤等），这类主食无需再额外配汤
@@ -314,7 +304,7 @@ const isSoupyStaple = (r: Recipe): boolean => {
       // 2岁以上午餐保留荤菜必选，但过滤掉与主食同种肉类的荤菜（如猪肉馄饨不配猪肉菜）
       if (mealType === 'lunch' && isOver2) {
         const stapleMeats = stapleRecipe!.mainIngredients.filter(ing =>
-          MEAT_INGREDIENTS.some(mi => ing.includes(mi) && mi.length > 1)
+          isMeatOrEggLike(lookupFoodCategory(ing))
         );
         dayFiltered.meat = dayFiltered.meat.filter(r =>
           !r.mainIngredients.some(ing => stapleMeats.some(sm => ing.includes(sm)))
@@ -377,7 +367,7 @@ const isSoupyStaple = (r: Recipe): boolean => {
   // 复合主食（含肉/蛋）时，蛋类池过滤掉含肉的蛋类（如蛋饺、蛋卷），避免营养重复
   if (hasCompositeStaple) {
     dayFiltered.egg = dayFiltered.egg.filter(r =>
-      !r.mainIngredients.some(ing => MEAT_INGREDIENTS.some(mi => ing.includes(mi)))
+      !r.mainIngredients.some(ing => isMeatOrEggLike(lookupFoodCategory(ing)))
     );
   }
 

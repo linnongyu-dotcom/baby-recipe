@@ -8,6 +8,7 @@ import { RecipeCard } from '@/components/recipe/RecipeCard';
 import { DAYS_OF_WEEK, DAY_LABELS, DayOfWeek, AGE_GROUP_LABELS, AgeGroup, WeeklyPlan } from '@/types';
 import { downloadRecipePDF } from '@/utils/pdfGenerator';
 import { encodeShareData, decodeShareData } from '@/utils/shareUtils';
+import { analyzeDayNutrition, analyzeWeekNutrition, generateSnacks } from '@/utils/nutritionEngine';
 
 interface NutritionGuide {
   title: string;
@@ -134,6 +135,21 @@ export function RecipePage() {
     };
     return map[jsDay];
   }, []);
+
+  const todayNutrition = useMemo(() => {
+    if (!displayPlan || !settings.babyAge) return null;
+    return analyzeDayNutrition(displayPlan[todayDay], settings.babyAge);
+  }, [displayPlan, todayDay, settings.babyAge]);
+
+  const snackSuggestions = useMemo(() => {
+    if (!settings.babyAge) return null;
+    return generateSnacks(settings.babyAge).items;
+  }, [settings.babyAge]);
+
+  const weekNutrition = useMemo(() => {
+    if (!displayPlan || !settings.babyAge) return null;
+    return analyzeWeekNutrition(displayPlan, settings.babyAge);
+  }, [displayPlan, settings.babyAge]);
 
   if (!weeklyPlan && !isShareMode) {
     navigate('/setup');
@@ -392,6 +408,89 @@ export function RecipePage() {
           </motion.div>
         )}
 
+        {/* 加餐建议 */}
+        {displayPlan && snackSuggestions && snackSuggestions.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.03 }}
+            className="mb-6 bg-white rounded-2xl shadow-lg p-6"
+          >
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-2xl">🍪</span>
+              <h2 className="text-xl font-semibold text-gray-800">加餐建议</h2>
+              <span className="text-xs text-gray-400">两餐之间</span>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              {snackSuggestions.map((snack, i) => (
+                <span
+                  key={i}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-50 text-purple-700 rounded-full text-sm"
+                >
+                  <span>{snack.icon}</span>
+                  <span className="text-xs text-purple-400">{snack.time}</span>
+                  <span>{snack.name}</span>
+                </span>
+              ))}
+            </div>
+          </motion.div>
+        )}
+
+        {/* 今日营养检查 */}
+        {displayPlan && todayNutrition && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.05 }}
+            className="mb-6 bg-white rounded-2xl shadow-lg p-6"
+          >
+            <div className="flex items-center gap-2 mb-4">
+              <span className="text-2xl">✅</span>
+              <h2 className="text-xl font-semibold text-gray-800">今日营养检查</h2>
+            </div>
+
+            {todayNutrition.covered.length > 0 && (
+              <div className="mb-4">
+                <h3 className="text-sm font-semibold text-green-600 mb-2">已覆盖</h3>
+                <div className="flex flex-wrap gap-3">
+                  {todayNutrition.covered.map((item) => (
+                    <span
+                      key={item.key}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-50 text-green-700 rounded-full text-sm"
+                    >
+                      <span>{item.icon}</span>
+                      <span>{item.name}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {todayNutrition.optimization.length > 0 && (
+              <div>
+                <h3 className="text-sm font-semibold text-purple-600 mb-2">优化建议</h3>
+                <div className="space-y-2">
+                  {todayNutrition.optimization.map((item) => (
+                    <div
+                      key={item.key}
+                      className="flex items-center px-4 py-2 bg-purple-50 rounded-xl"
+                    >
+                      <span className="text-sm text-purple-700 flex items-center gap-1.5">
+                        <span>{item.icon}</span>
+                        <span>{item.suggestion}</span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {todayNutrition.summary && (
+              <p className="mt-4 text-sm text-gray-400 italic">{todayNutrition.summary}</p>
+            )}
+          </motion.div>
+        )}
+
         {/* 本周推荐 折叠 */}
         {displayPlan && (
           <motion.div
@@ -497,6 +596,44 @@ export function RecipePage() {
                         </motion.div>
                       );
                     })}
+
+                    {/* 本周营养概览 */}
+                    {weekNutrition && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="bg-white rounded-xl p-5 shadow-sm border-2 border-purple-100"
+                      >
+                        <div className="flex items-center gap-2 mb-4">
+                          <span className="text-xl">📊</span>
+                          <h2 className="text-lg font-semibold text-gray-800">本周营养概览</h2>
+                        </div>
+                        <p className="text-xs text-gray-400 mb-4">
+                          🥗 食物多样性：
+                          <span className={weekNutrition.diversity === '优秀' ? 'text-green-600 font-medium' : weekNutrition.diversity === '良好' ? 'text-blue-600 font-medium' : 'text-amber-600'}>
+                            {weekNutrition.diversity}
+                          </span>
+                          （本周共 {weekNutrition.uniqueIngredients} 种食材）
+                        </p>
+                        <div className="space-y-3">
+                          {weekNutrition.items.map((item) => (
+                            <div
+                              key={item.key}
+                              className="flex items-center justify-between px-4 py-2 bg-purple-50/50 rounded-xl"
+                            >
+                              <span className="text-sm text-gray-700 flex items-center gap-2">
+                                <span>{item.icon}</span>
+                                <span>{item.name}：</span>
+                                <span className={item.display === '建议增加' ? 'text-amber-600' : item.display === '搭配良好' ? 'text-green-600 font-medium' : 'text-gray-800'}>
+                                  {item.display}
+                                </span>
+                              </span>
+                              <span className="text-xs text-gray-400">{item.suggestion}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </motion.div>
+                    )}
                   </div>
                 </motion.div>
               )}
@@ -510,10 +647,11 @@ export function RecipePage() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.7 }}
-          className="mt-8 text-center text-gray-500 text-sm"
+          className="mt-8 text-center text-gray-400 text-xs"
         >
-          <p>💡 点击菜品查看详细做法，点击 🔄 换单道菜，点击"全部换一换"刷新整餐</p>
-          <p className="mt-1">📝 点击"添加自定义"可以输入自己的菜谱</p>
+          <p>营养数据参考</p>
+          <p>《中国居民膳食指南（2022）》《中国居民膳食营养素参考摄入量（DRIs）》</p>
+          <p>《中国学龄前儿童膳食指南（2022）》《中国7～24月龄婴幼儿喂养指南（2022）》</p>
         </motion.div>
         )}
       </div>
