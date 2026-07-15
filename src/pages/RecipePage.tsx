@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { ChefHat, Settings, Download, ChevronDown, Loader2, Share2, Check } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { Button } from '@/components/common/Button';
+import { Modal } from '@/components/common/Modal';
 import { RecipeCard } from '@/components/recipe/RecipeCard';
 import { DAYS_OF_WEEK, DAY_LABELS, DayOfWeek, AGE_GROUP_LABELS, AgeGroup, WeeklyPlan } from '@/types';
 import { downloadRecipePDF } from '@/utils/pdfGenerator';
@@ -115,6 +116,7 @@ export function RecipePage() {
   const [downloading, setDownloading] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
   const [showWeeklyPlan, setShowWeeklyPlan] = useState(false);
+  const [showDownloadModal, setShowDownloadModal] = useState(false);
 
   useEffect(() => {
     if (shareParam) {
@@ -170,11 +172,12 @@ export function RecipePage() {
     }
   };
 
-  const handleDownload = async () => {
+  const handleDownload = async (targetDay?: DayOfWeek | null) => {
     if (!displayPlan) return;
+    setShowDownloadModal(false);
     setDownloading(true);
     try {
-      await downloadRecipePDF(displayPlan, settings.babyAge);
+      await downloadRecipePDF(displayPlan, settings.babyAge, targetDay);
     } catch (e) {
       console.error('PDF生成失败', e);
       alert('PDF生成失败，请重试');
@@ -182,6 +185,9 @@ export function RecipePage() {
       setDownloading(false);
     }
   };
+
+  const handleDownloadToday = () => handleDownload(todayDay);
+  const handleDownloadWeek = () => handleDownload(null);
 
   const nutritionGuide = settings.babyAge ? getNutritionGuide(settings.babyAge) : null;
 
@@ -256,7 +262,7 @@ export function RecipePage() {
                 </Button>
               </>
             )}
-            <Button onClick={handleDownload} variant="secondary" size="sm" disabled={downloading}>
+            <Button onClick={() => setShowDownloadModal(true)} variant="secondary" size="sm" disabled={downloading}>
               {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
               {downloading ? '生成中…' : '下载'}
             </Button>
@@ -468,7 +474,7 @@ export function RecipePage() {
 
             {todayNutrition.optimization.length > 0 && (
               <div>
-                <h3 className="text-sm font-semibold text-purple-600 mb-2">优化建议</h3>
+                <h3 className="text-sm font-semibold text-purple-600 mb-2">温馨提醒</h3>
                 <div className="space-y-2">
                   {todayNutrition.optimization.map((item) => (
                     <div
@@ -654,6 +660,36 @@ export function RecipePage() {
           <p>《中国学龄前儿童膳食指南（2022）》《中国7～24月龄婴幼儿喂养指南（2022）》</p>
         </motion.div>
         )}
+
+        {/* 下载选择弹窗 */}
+        <Modal
+          isOpen={showDownloadModal}
+          onClose={() => setShowDownloadModal(false)}
+          title="选择下载内容"
+        >
+          <div className="space-y-3">
+            <button
+              onClick={handleDownloadToday}
+              className="w-full p-4 rounded-xl border-2 border-purple-200 hover:border-purple-400 hover:bg-purple-50 transition-all text-left flex items-center gap-4"
+            >
+              <span className="text-3xl">📋</span>
+              <div>
+                <div className="font-semibold text-gray-800">下载今日食谱</div>
+                <div className="text-sm text-gray-500">{DAY_LABELS[todayDay]} · 早中晚三餐</div>
+              </div>
+            </button>
+            <button
+              onClick={handleDownloadWeek}
+              className="w-full p-4 rounded-xl border-2 border-purple-200 hover:border-purple-400 hover:bg-purple-50 transition-all text-left flex items-center gap-4"
+            >
+              <span className="text-3xl">📅</span>
+              <div>
+                <div className="font-semibold text-gray-800">下载一周食谱</div>
+                <div className="text-sm text-gray-500">7天 × 21餐完整食谱</div>
+              </div>
+            </button>
+          </div>
+        </Modal>
       </div>
     </div>
   );
