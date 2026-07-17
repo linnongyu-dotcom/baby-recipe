@@ -1,4 +1,37 @@
-<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-<rect width="32" height="32" fill="#0A0B0D"/>
-<path d="M26.6677 23.7149H8.38057V20.6496H5.33301V8.38159H26.6677V23.7149ZM8.38057 20.6496H23.6201V11.4482H8.38057V20.6496ZM16.0011 16.0021L13.8461 18.1705L11.6913 16.0021L13.8461 13.8337L16.0011 16.0021ZM22.0963 16.0008L19.9414 18.1691L17.7865 16.0008L19.9414 13.8324L22.0963 16.0008Z" fill="#32F08C"/>
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- 背景 -->
+  <rect width="512" height="512" rx="100" fill="#F5F0FF"/>
+  
+  <!-- 碗身 -->
+  <path d="M120 280 Q120 440 256 440 Q392 440 392 280 Z" fill="#A78BFA"/>
+  
+  <!-- 碗内米饭 -->
+  <ellipse cx="256" cy="275" rx="120" ry="40" fill="white"/>
+  
+  <!-- 蒸汽（左） -->
+  <path d="M175 170 Q170 130 180 90" stroke="#C4B5FD" stroke-width="12" stroke-linecap="round" fill="none" opacity="0.6"/>
+  
+  <!-- 蒸汽（中） -->
+  <path d="M245 155 Q240 110 250 70" stroke="#C4B5FD" stroke-width="14" stroke-linecap="round" fill="none" opacity="0.8"/>
+  
+  <!-- 蒸汽（右） -->
+  <path d="M315 170 Q320 130 310 90" stroke="#C4B5FD" stroke-width="12" stroke-linecap="round" fill="none" opacity="0.6"/>
+  
+  <!-- 眼睛（左） -->
+  <circle cx="220" cy="265" r="10" fill="#7C3AED"/>
+  
+  <!-- 眼睛（右） -->
+  <circle cx="292" cy="265" r="10" fill="#7C3AED"/>
+  
+  <!-- 微笑 -->
+  <path d="M230 295 Q256 320 282 295" stroke="#7C3AED" stroke-width="8" stroke-linecap="round" fill="none"/>
+  
+  <!-- 腮红（左） -->
+  <circle cx="195" cy="285" r="14" fill="#DDD6FE" opacity="0.7"/>
+  
+  <!-- 腮红（右） -->
+  <circle cx="317" cy="285" r="14" fill="#DDD6FE" opacity="0.7"/>
+  
+  <!-- 碗底装饰线 -->
+  <path d="M150 380 Q256 410 362 380" stroke="white" stroke-width="5" stroke-linecap="round" fill="none" opacity="0.4"/>
 </svg>

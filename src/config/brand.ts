@@ -51,15 +51,15 @@ export const BRAND_COLORS = {
 
 export const BRAND_ASSETS = {
   /** Logo */
-  logo: '/favicon.svg',
+  logo: '/饭小宝头像.png',
   /** Favicon */
-  favicon: '/favicon.svg',
+  favicon: '/饭小宝头像.png',
   /** Apple Touch Icon */
-  appleTouchIcon: '/favicon.svg',
+  appleTouchIcon: '/饭小宝头像.png',
   /** Android Icon */
-  androidIcon: '/favicon.svg',
+  androidIcon: '/饭小宝头像.png',
   /** 分享图片（OG Image） */
-  ogImage: '/favicon.svg',
+  ogImage: '/饭小宝头像.png',
 } as const;
 
 // ============================================================
@@ -88,7 +88,7 @@ export const SEO = {
     title: '饭小宝 - 宝宝营养食谱管家',
     description:
       '饭小宝，科学搭配每一餐，让喂养更简单。根据宝宝年龄、过敏信息智能生成一周食谱。',
-    image: '/favicon.svg',
+    image: '/饭小宝头像.png',
     type: 'website',
     locale: 'zh_CN',
     siteName: '饭小宝',
@@ -98,7 +98,7 @@ export const SEO = {
     card: 'summary',
     title: '饭小宝 - 宝宝营养食谱管家',
     description: '科学搭配每一餐，让喂养更简单。',
-    image: '/favicon.svg',
+    image: '/饭小宝头像.png',
   },
 } as const;
 
@@ -117,7 +117,7 @@ export const PWA = {
   backgroundColor: '#F5F0FF',
   /** Manifest Icons */
   icons: [
-    { src: '/favicon.svg', sizes: 'any', type: 'image/svg+xml' },
+    { src: '/饭小宝头像.png', sizes: '512x512', type: 'image/png' },
   ],
 } as const;
 

@@ -1,7 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useState, useEffect, useMemo } from 'react';
-import { ChefHat, Settings, Download, ChevronDown, Loader2, Share2, Check } from 'lucide-react';
+import { Settings, Download, ChevronDown, Loader2, Share2, Check } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { Button } from '@/components/common/Button';
 import { Modal } from '@/components/common/Modal';
@@ -10,7 +10,7 @@ import { DAYS_OF_WEEK, DAY_LABELS, DayOfWeek, AGE_GROUP_LABELS, AgeGroup, Weekly
 import { downloadRecipePDF } from '@/utils/pdfGenerator';
 import { encodeShareData, decodeShareData } from '@/utils/shareUtils';
 import { analyzeDayNutrition, analyzeWeekNutrition, generateSnacks } from '@/utils/nutritionEngine';
-import { BRAND, SHARE, setPageTitle } from '@/config/brand';
+import { BRAND, SHARE, BRAND_ASSETS, setPageTitle } from '@/config/brand';
 
 interface NutritionGuide {
   title: string;
@@ -236,7 +236,7 @@ export function RecipePage() {
         >
           <div className="min-w-0">
             <h1 className="text-xl sm:text-2xl font-bold text-gray-800 flex items-center gap-2">
-              <ChefHat className="w-6 h-6 sm:w-8 sm:h-8 text-purple-500 flex-shrink-0" />
+              <img src={BRAND_ASSETS.logo} alt={BRAND.name} className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl flex-shrink-0" />
               {isShareMode ? (
                 <span className="whitespace-nowrap">分享食谱</span>
               ) : (
