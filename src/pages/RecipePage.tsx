@@ -112,7 +112,7 @@ export function RecipePage() {
   const { weeklyPlan, settings, babyName, regenerateMeal, regenerateDish, removeDish, swapMeals, setCustomMeal, addDish } = store;
 
   const shareParam = searchParams.get('share');
-  const [sharedData, setSharedData] = useState<{ weeklyPlan: WeeklyPlan; ageLabel: string } | null>(null);
+  const [sharedData, setSharedData] = useState<{ weeklyPlan: WeeklyPlan; ageLabel: string; ageGroup?: AgeGroup } | null>(null);
   const [showNutritionGuide, setShowNutritionGuide] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
@@ -122,7 +122,13 @@ export function RecipePage() {
   useEffect(() => {
     if (shareParam) {
       const decoded = decodeShareData(shareParam);
-      if (decoded) setSharedData(decoded);
+      if (decoded) {
+        setSharedData(decoded);
+        // 分享模式下用传入的年龄做营养分析
+        if (decoded.ageGroup) {
+          store.setBabyAge(decoded.ageGroup);
+        }
+      }
     }
   }, [shareParam]);
 
@@ -166,7 +172,7 @@ export function RecipePage() {
   const handleShare = async () => {
     if (!weeklyPlan) return;
     const ageLabel = settings.babyAge ? AGE_GROUP_LABELS[settings.babyAge] : '宝宝';
-    const encoded = encodeShareData(weeklyPlan, ageLabel);
+    const encoded = encodeShareData(weeklyPlan, ageLabel, settings.babyAge!);
     const url = `${window.location.origin}/recipe?share=${encoded}`;
     try {
       await navigator.clipboard.writeText(url);
