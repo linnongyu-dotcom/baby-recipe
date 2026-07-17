@@ -10,6 +10,7 @@ import { DAYS_OF_WEEK, DAY_LABELS, DayOfWeek, AGE_GROUP_LABELS, AgeGroup, Weekly
 import { downloadRecipePDF } from '@/utils/pdfGenerator';
 import { encodeShareData, decodeShareData } from '@/utils/shareUtils';
 import { analyzeDayNutrition, analyzeWeekNutrition, generateSnacks } from '@/utils/nutritionEngine';
+import { BRAND, SHARE, setPageTitle } from '@/config/brand';
 
 interface NutritionGuide {
   title: string;
@@ -126,6 +127,10 @@ export function RecipePage() {
   }, [shareParam]);
 
   const isShareMode = !!sharedData;
+
+  useEffect(() => {
+    setPageTitle(isShareMode ? '分享食谱' : (babyName ? `${babyName}的食谱` : '今日食谱'));
+  }, [babyName, isShareMode]);
   const displayPlan = sharedData?.weeklyPlan || weeklyPlan;
   const displayAgeLabel = sharedData?.ageLabel || (settings.babyAge ? AGE_GROUP_LABELS[settings.babyAge] : '');
 
@@ -216,7 +221,7 @@ export function RecipePage() {
             className="mb-4 p-4 bg-green-50 border border-green-200 rounded-xl flex items-center justify-between"
           >
             <div>
-              <p className="font-semibold text-green-800">📋 家人分享的饭小宝食谱</p>
+              <p className="font-semibold text-green-800">📋 家人分享的{BRAND.name}食谱</p>
               <p className="text-sm text-green-600">{displayAgeLabel}</p>
             </div>
             <p className="text-xs text-green-500">只读模式 · 仅供参考</p>
@@ -245,7 +250,7 @@ export function RecipePage() {
                 {displayAgeLabel} · 共 7 天 × 3 餐 = 21 餐
               </p>
             ) : (
-              <p className="text-gray-600 mt-1 text-xs sm:text-sm">科学搭配每一餐，让喂养更简单</p>
+              <p className="text-gray-600 mt-1 text-xs sm:text-sm">{SHARE.description}</p>
             )}
           </div>
 

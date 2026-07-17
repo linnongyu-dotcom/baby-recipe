@@ -7,6 +7,7 @@ import { Button } from '@/components/common/Button';
 import { Card } from '@/components/common/Card';
 import { Tag } from '@/components/common/Tag';
 import { AGE_GROUP_LABELS, AgeGroup, COMMON_ALLERGIES, COMMON_FOODS } from '@/types';
+import { BRAND, setPageTitle } from '@/config/brand';
 
 interface FoodSelectorProps {
   title: string;
@@ -168,6 +169,10 @@ export function SetupPage() {
 
   const isSettingsMode = isSetupComplete;
 
+  useEffect(() => {
+    setPageTitle(isSettingsMode ? '设置' : undefined);
+  }, [isSettingsMode]);
+
   const handleAgeSelect = (age: AgeGroup) => {
     setBabyAge(age);
   };
@@ -226,10 +231,10 @@ export function SetupPage() {
           ) : (
             <>
               <h1 className="text-3xl font-bold text-gray-800 mb-2">
-                少一点纠结，多一点陪伴。
+                {BRAND.slogan}
               </h1>
               <p className="text-gray-600">
-                根据宝宝年龄、饮食需求和过敏信息，为你安排每一餐，让科学喂养变得简单。
+                {BRAND.description}
               </p>
             </>
           )}

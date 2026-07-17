@@ -1,6 +1,7 @@
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import { WeeklyPlan, DayOfWeek, MealType, DISH_TYPE_LABELS, DAY_LABELS, AGE_GROUP_LABELS, AgeGroup } from '@/types';
+import { BRAND } from '@/config/brand';
 
 const MEAL_LABELS: Record<MealType, string> = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐' };
 const MEAL_EMOJI: Record<MealType, string> = { breakfast: '🌅', lunch: '☀️', dinner: '🌙' };
@@ -74,7 +75,7 @@ function buildRecipeHTML(weeklyPlan: WeeklyPlan, ageLabel: string, targetDay?: D
   } else {
     html += `<h1 style="text-align:center;font-size:22px;font-weight:700;color:#6d28d9;margin:0 0 4px 0;">📖 宝宝一周营养食谱</h1>`;
   }
-  html += `<p style="text-align:center;font-size:13px;color:#888;margin:0 0 20px 0;">${ageLabel} · ${dateStr}</p>`;
+  html += `<p style="text-align:center;font-size:13px;color:#888;margin:0 0 20px 0;">${ageLabel} · ${BRAND.name} · ${dateStr}</p>`;
 
   for (let di = 0; di < days.length; di++) {
     const day = days[di];
@@ -157,7 +158,7 @@ export async function downloadRecipePDF(
     }
 
     const dateStr = new Date().toLocaleDateString('zh-CN').replace(/\//g, '-');
-    const title = targetDay ? `宝宝今日食谱_${DAY_LABELS[targetDay]}` : `宝宝一周食谱`;
+    const title = targetDay ? `${BRAND.name}今日食谱_${DAY_LABELS[targetDay]}` : `${BRAND.name}一周食谱`;
     pdf.save(`${title}_${ageLabel}_${dateStr}.pdf`);
   } finally {
     document.body.removeChild(container);

@@ -12,8 +12,13 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   
-  /* 自定义颜色变量 */
+  /*
+   * 品牌颜色变量
+   * 与 src/config/brand.ts 中的 BRAND_COLORS 保持一致
+   */
   --color-primary: #A78BFA;
+  --color-primary-dark: #8B5CF6;
+  --color-primary-darker: #7C3AED;
   --color-secondary: #C4B5FD;
   --color-background: #F5F0FF;
 }

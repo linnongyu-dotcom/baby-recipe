@@ -107,6 +107,9 @@ export function generateSnacks(age: AgeGroup): { items: SnackItem[]; coveredKeys
 
 export function analyzeDayNutrition(dayPlan: DayPlan, age: AgeGroup): DayNutritionResult {
   const rule = getAgeRule(age);
+  if (!rule) {
+    return { covered: [], optimization: [], summary: '请先完成宝宝信息设置。' };
+  }
 
   const covered: NutritionItem[] = [];
   const optimization: NutritionItem[] = [];
@@ -172,6 +175,9 @@ function buildDaySummary(
 
 export function analyzeWeekNutrition(weeklyPlan: WeeklyPlan, age: AgeGroup): WeekNutritionResult {
   const rule = getAgeRule(age);
+  if (!rule) {
+    return { items: [], uniqueIngredients: 0, diversity: '请先完成设置', summary: '请先完成宝宝信息设置。' };
+  }
 
   const items: WeekNutritionItem[] = rule.weeklyChecks.map(check => {
     let count = 0;
