@@ -262,15 +262,6 @@ export function RecipeCard({
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
-            onClick={() => setShowInspiration(true)}
-            className="flex-1 flex items-center justify-center gap-1 px-2 py-2 bg-gradient-to-r from-purple-100 to-purple-200 text-purple-600 rounded-lg text-sm hover:from-purple-200 hover:to-purple-300 transition-all"
-          >
-            <Lightbulb className="w-4 h-4" />
-            食材灵感
-          </motion.button>
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
             onClick={onRefresh}
             className="flex-1 flex items-center justify-center gap-1 px-2 py-2 bg-gradient-to-r from-orange-100 to-orange-200 text-orange-600 rounded-lg text-sm hover:from-orange-200 hover:to-orange-300 transition-all"
           >
@@ -285,6 +276,15 @@ export function RecipeCard({
           >
             <Plus className="w-4 h-4" />
             添加菜品
+          </motion.button>
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => setShowInspiration(true)}
+            className="flex-1 flex items-center justify-center gap-1 px-2 py-2 bg-gradient-to-r from-purple-100 to-purple-200 text-purple-600 rounded-lg text-sm hover:from-purple-200 hover:to-purple-300 transition-all"
+          >
+            <Lightbulb className="w-4 h-4" />
+            食材找食谱
           </motion.button>
         </div>
         )}
@@ -315,11 +315,11 @@ export function RecipeCard({
         />
       </Modal>
 
-      {/* 食材灵感弹窗 */}
+      {/* 食材找食谱弹窗 */}
       <Modal
         isOpen={showInspiration}
         onClose={() => setShowInspiration(false)}
-        title="食材灵感"
+        title="食材找食谱"
       >
         <IngredientInspiration
           onSelect={(recipe) => {
