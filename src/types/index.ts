@@ -1,5 +1,5 @@
 // 年龄段类型
-export type AgeGroup = '6-8m' | '9-11m' | '1-2y' | '2-3y' | '3-4y';
+export type AgeGroup = '6-8m' | '9-11m' | '1-2y' | '2-3y' | '3-5y';
 
 // 年龄段显示名称
 export const AGE_GROUP_LABELS: Record<AgeGroup, string> = {
@@ -7,7 +7,7 @@ export const AGE_GROUP_LABELS: Record<AgeGroup, string> = {
   '9-11m': '9-11个月',
   '1-2y': '1-2岁',
   '2-3y': '2-3岁',
-  '3-4y': '3-4岁',
+  '3-5y': '3-5岁',
 };
 
 // 食材类型

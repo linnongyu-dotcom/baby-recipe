@@ -84,8 +84,8 @@ function getNutritionGuide(age: AgeGroup): NutritionGuide {
       ],
       avoid: ['整颗坚果（可磨粉）', '果冻', '含糖饮料', '过多零食'],
     },
-    '3-4y': {
-      title: '3-4岁 多样化饮食期',
+    '3-5y': {
+      title: '3-5岁 多样化饮食期',
       dailyNeeds: [
         '奶量：300-400ml/天',
         '三餐一点，食物多样化',

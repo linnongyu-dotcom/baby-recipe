@@ -77,16 +77,16 @@ export function generateSnacks(age: AgeGroup): { items: SnackItem[]; coveredKeys
     '9-11m': [{ name: '香蕉', icon: '🍌' }, { name: '梨', icon: '🍐' }],
     '1-2y': [{ name: '苹果', icon: '🍎' }, { name: '香蕉', icon: '🍌' }],
     '2-3y': [{ name: '苹果', icon: '🍎' }, { name: '蓝莓', icon: '🫐' }],
-    '3-4y': [{ name: '苹果', icon: '🍎' }, { name: '橘子', icon: '🍊' }],
+    '3-5y': [{ name: '苹果', icon: '🍎' }, { name: '橘子', icon: '🍊' }],
   };
   const dairies: Record<string, { name: string; icon: string }[]> = {
     '9-11m': [{ name: '酸奶', icon: '🥛' }],
     '1-2y': [{ name: '酸奶', icon: '🥛' }, { name: '奶酪', icon: '🧀' }],
     '2-3y': [{ name: '酸奶', icon: '🥛' }, { name: '奶酪', icon: '🧀' }],
-    '3-4y': [{ name: '酸奶', icon: '🥛' }, { name: '牛奶', icon: '🥛' }],
+    '3-5y': [{ name: '酸奶', icon: '🥛' }, { name: '牛奶', icon: '🥛' }],
   };
 
-  const fruitPool = fruits[age] || fruits['3-4y'];
+  const fruitPool = fruits[age] || fruits['3-5y'];
   const dairyPool = dairies[age] || [];
   const fruit = fruitPool[Math.floor(Math.random() * fruitPool.length)];
   const dairy = dairyPool.length > 0 ? dairyPool[Math.floor(Math.random() * dairyPool.length)] : null;

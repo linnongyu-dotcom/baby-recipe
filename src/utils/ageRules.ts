@@ -29,7 +29,7 @@ const AGE_GROUP_KEY: Record<AgeGroup, '6-11m' | '1-2y' | '3-5y'> = {
   '9-11m': '6-11m',
   '1-2y': '1-2y',
   '2-3y': '3-5y',
-  '3-4y': '3-5y',
+  '3-5y': '3-5y',
 };
 
 export const AGE_RULES: Record<'6-11m' | '1-2y' | '3-5y', AgeRule> = {

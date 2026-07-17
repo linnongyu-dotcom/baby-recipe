@@ -136,7 +136,7 @@ function createMealPlan(
   // 年龄段分组
   const isBaby = babyAge === '6-8m' || babyAge === '9-11m';
   const isToddler = babyAge === '1-2y';
-  const isOver2 = babyAge === '2-3y' || babyAge === '3-4y';
+  const isOver2 = babyAge === '2-3y' || babyAge === '3-5y';
 
   if (mealType === 'breakfast') {
     if (isBaby) {
@@ -252,7 +252,7 @@ const isSoupyStaple = (r: Recipe): boolean => {
       if (mealType === 'breakfast' && isLunchDinnerOnlyStaple(r)) return false;
       if (mealType !== 'breakfast' && isBreakfastOnly(r)) return false;
       // 2岁以上午餐不喝粥（1-2岁可以偶尔喝）
-      const isOver2 = babyAge === '2-3y' || babyAge === '3-4y';
+      const isOver2 = babyAge === '2-3y' || babyAge === '3-5y';
       if (mealType === 'lunch' && isOver2 && r.name.includes('粥')) return false;
       // 午餐不带汤水主食（馄饨、汤面、疙瘩汤等留给早晚餐，午餐要丰盛）
       if (mealType === 'lunch' && !isBaby && isSoupyStaple(r)) return false;
@@ -561,7 +561,7 @@ export function createCustomRecipe(
   ageGroup: AgeGroup | null,
   dishType: DishType = 'meat'
 ): Recipe {
-  const fallbackAge: AgeGroup = ageGroup || '3-4y';
+  const fallbackAge: AgeGroup = ageGroup || '3-5y';
   // 解析食材（选填）
   const ingredientList = ingredients
     ? ingredients.split('\n').filter(line => line.trim()).map(line => {
