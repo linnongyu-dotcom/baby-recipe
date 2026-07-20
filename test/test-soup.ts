@@ -1,7 +1,7 @@
 import { generateWeeklyPlan } from '../src/utils/recipeGenerator';
 import { UserSettings } from '../src/types';
 
-const AGES = ['1-2y', '2-3y', '3-4y'] as const;
+const AGES = ['1-2y', '2-3y', '3-5y'] as const;
 
 console.log('午餐缺汤诊断');
 console.log('='.repeat(50));

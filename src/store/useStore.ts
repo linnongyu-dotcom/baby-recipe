@@ -241,7 +241,7 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'baby-recipe-storage',
-      version: 32,
+      version: 35,
       migrate: (persistedState: any, version: number) => {
         if (version < 30) {
           return {
@@ -264,6 +264,20 @@ export const useStore = create<AppState>()(
           return {
             ...persistedState,
             babyName: persistedState?.babyName || '',
+          };
+        }
+        // v33: 6-8 月龄改为 1-2 餐辅食模式，清空旧的三餐数据强制重新生成
+        if (version < 33) {
+          return {
+            ...persistedState,
+            weeklyPlan: null,
+          };
+        }
+        // v35: 9-11 月龄改为复合主食模式，清空旧数据
+        if (version < 35) {
+          return {
+            ...persistedState,
+            weeklyPlan: null,
           };
         }
         return persistedState;

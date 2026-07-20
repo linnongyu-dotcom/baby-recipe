@@ -3,11 +3,37 @@ export type AgeGroup = '6-8m' | '9-11m' | '1-2y' | '2-3y' | '3-5y';
 
 // 年龄段显示名称
 export const AGE_GROUP_LABELS: Record<AgeGroup, string> = {
-  '6-8m': '6-8个月',
-  '9-11m': '9-11个月',
+  '6-8m': '6-8个月（辅食初期）',
+  '9-11m': '9-11个月（辅食进阶）',
   '1-2y': '1-2岁',
   '2-3y': '2-3岁',
   '3-5y': '3-5岁',
+};
+
+// 年龄段副标题（设置页展示）
+export const AGE_GROUP_SUBTITLES: Record<AgeGroup, string> = {
+  '6-8m': '开始尝试辅食',
+  '9-11m': '辅食逐渐丰富',
+  '1-2y': '自主进食期',
+  '2-3y': '规律饮食期',
+  '3-5y': '多样化饮食期',
+};
+
+// 喂养阶段类型
+export type AgeStage = 'growth_check' | 'coverage_check' | 'balance_check';
+
+// 根据年龄获取喂养阶段
+export function getAgeStage(age: AgeGroup): AgeStage {
+  if (age === '6-8m') return 'growth_check';
+  if (age === '9-11m') return 'coverage_check';
+  return 'balance_check';
+}
+
+// 营养检查标题
+export const NUTRITION_CHECK_TITLES: Record<AgeStage, { title: string; icon: string; hint: string }> = {
+  growth_check: { title: '今日辅食成长', icon: '🌱', hint: '6-8个月宝宝仍以奶为主要营养来源，辅食重点是逐步尝试和建立饮食习惯。' },
+  coverage_check: { title: '今日营养覆盖检查', icon: '✅', hint: '' },
+  balance_check: { title: '今日营养是否均衡', icon: '✅', hint: '' },
 };
 
 // 食材类型

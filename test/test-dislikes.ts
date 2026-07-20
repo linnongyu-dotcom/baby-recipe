@@ -21,7 +21,7 @@ for (const test of DISLIKE_TESTS) {
 
   for (let run = 0; run < 20; run++) {
     const settings: UserSettings = {
-      babyAge: '3-4y',
+      babyAge: '3-5y',
       allergies: [],
       dislikes: [test.dislike],
       likes: [],

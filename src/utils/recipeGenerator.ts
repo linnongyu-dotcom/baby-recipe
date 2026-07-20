@@ -1,6 +1,6 @@
 import { UserSettings, Recipe, WeeklyPlan, DayPlan, AgeGroup, MealPlan, MealType, DishType } from '../types';
 import { recipes } from '../data/recipes';
-import { lookupFoodCategory, isMeatOrEggLike, isVegetableCategory } from './foodDictionary';
+import { lookupFoodCategory, isMeatOrEggLike, isVegetableCategory, FoodCategory } from './foodDictionary';
 
 // 根据用户设置生成一周食谱
 export function generateWeeklyPlan(settings: UserSettings, customRecipes: Recipe[] = []): WeeklyPlan {
@@ -102,7 +102,7 @@ function filterRecipes(settings: UserSettings, customRecipes: Recipe[] = []): Re
   return grouped;
 }
 
-// 为一天创建三顿饭
+// 为一天创建食谱（依年龄不同：6-8m为1-2餐辅食，9-11m及以上为三餐）
 function createDayPlan(
   availableRecipes: Record<DishType, Recipe[]>,
   settings: UserSettings,
@@ -111,11 +111,172 @@ function createDayPlan(
 ): DayPlan {
   const age = settings.babyAge!;
   const dayUsedStapleNames = new Set<string>();
+  const is6to8m = age === '6-8m';
+
+  // 6-8 月龄：1-2 餐辅食，每餐仅 1 道食物，晚餐为空
+  if (is6to8m) {
+    const breakfast = createSimpleBabyMeal(availableRecipes, weekUsedIds);
+    // 第二餐辅食 50% 概率，不强制避免一次引入过多食物
+    const lunch = Math.random() < 0.5
+      ? createSimpleBabyMeal(availableRecipes, weekUsedIds)
+      : { dishes: [] };
+    const dinner: MealPlan = { dishes: [] };
+    return { breakfast, lunch, dinner };
+  }
+
   const breakfast = createMealPlan(availableRecipes, 'breakfast', weekUsedIds, age, dayUsedStapleNames);
   const lunch = createMealPlan(availableRecipes, 'lunch', weekUsedIds, age, dayUsedStapleNames);
-  const dinner = createMealPlan(availableRecipes, 'dinner', weekUsedIds, age, dayUsedStapleNames);
+  // 9-11 月龄：2 餐辅食，晚餐为空
+  const dinner: MealPlan = age === '9-11m' ? { dishes: [] } : createMealPlan(availableRecipes, 'dinner', weekUsedIds, age, dayUsedStapleNames);
 
-  return { breakfast, lunch, dinner };
+  const dayPlan = { breakfast, lunch, dinner };
+
+  // 9-11 月龄：营养覆盖补齐，确保蛋类、肉鱼禽、深色蔬菜、水果每日覆盖
+  if (age === '9-11m') {
+    ensureBabyDailyCoverage(dayPlan, availableRecipes, weekUsedIds);
+  }
+
+  return dayPlan;
+}
+
+// 6-8 月龄简易辅食生成：从食谱池中随机选 1 道食物
+// 辅食初期核心目标是保证铁来源（肉泥、蛋黄、高铁米粉），适当偏重蛋白质类
+function createSimpleBabyMeal(
+  availableRecipes: Record<DishType, Recipe[]>,
+  usedIds: Set<string>,
+): MealPlan {
+  // 蛋白质/铁来源类：肉、蛋
+  const proteinPool = [
+    ...availableRecipes.meat,
+    ...availableRecipes.egg,
+  ];
+  // 其他类：主食、蔬菜、水果
+  const otherPool = [
+    ...availableRecipes.staple,
+    ...availableRecipes.vegetable,
+    ...availableRecipes.dessert,
+  ];
+
+  // 合并并过滤已使用的
+  const allRecipes = [...proteinPool, ...otherPool];
+  let available = allRecipes.filter(r => !usedIds.has(r.id));
+  if (available.length === 0) available = allRecipes;
+
+  // 分离可用池中的蛋白质类和其他类（蛋白质不足时回退复用）
+  const availProtein = available.filter(r => proteinPool.includes(r));
+  const availOther = available.filter(r => otherPool.includes(r));
+
+  // 40% 概率选蛋白质/铁来源（肉泥、蛋黄），60% 选其他
+  // 蛋白质池耗尽时允许复用本周已用过的蛋白质食谱
+  let recipe: Recipe | null = null;
+  if (availProtein.length > 0 && Math.random() < 0.4) {
+    recipe = pickWeightedRecipe(availProtein);
+  }
+  // 未命中蛋白质或蛋白质池已空，允许回退复用蛋白质
+   if (!recipe && Math.random() < 0.4 && proteinPool.length > 0) {
+     recipe = pickWeightedRecipe(proteinPool);
+   }
+  if (!recipe && availOther.length > 0) {
+    recipe = pickWeightedRecipe(availOther);
+  }
+  if (!recipe) {
+    recipe = pickWeightedRecipe(available);
+  }
+
+  if (recipe) {
+    usedIds.add(recipe.id);
+    return { dishes: [recipe] };
+  }
+  return { dishes: [] };
+}
+
+// 9-11 月龄复合主食生成：每餐一道主食+动物蛋白+蔬菜
+// 优先选择已组合好三要素的食谱，降低妈妈做饭压力
+function createCompositeMeal(
+  availableRecipes: Record<DishType, Recipe[]>,
+  usedIds: Set<string>,
+): MealPlan {
+  // 分离复合主食（同时含蛋白质+蔬菜）和简单主食
+  const compositeStaples: Recipe[] = [];
+  const simpleStaples: Recipe[] = [];
+  for (const r of availableRecipes.staple) {
+    const cats = r.mainIngredients.map(ing => lookupFoodCategory(ing));
+    const hasProtein = cats.some(c => ['egg', 'fishSeafood', 'redMeat', 'poultry'].includes(c));
+    const hasVeg = cats.some(c => ['darkVeg', 'lightVeg'].includes(c));
+    if (hasProtein && hasVeg) {
+      compositeStaples.push(r);
+    } else {
+      simpleStaples.push(r);
+    }
+  }
+
+  // 70% 优先选复合主食，30% 允许简单主食（保证多样性）
+  const preferComposite = Math.random() < 0.7;
+  let pool: Recipe[];
+  if (preferComposite && compositeStaples.length > 0) {
+    pool = compositeStaples;
+  } else {
+    pool = [...compositeStaples, ...simpleStaples];
+  }
+
+  // 过滤已使用的，低龄池不足时允许复用
+  let filtered = pool.filter(r => !usedIds.has(r.id));
+  if (filtered.length === 0) {
+    filtered = pool;
+  }
+
+  const recipe = pickWeightedRecipe(filtered);
+  if (recipe) {
+    usedIds.add(recipe.id);
+    return { dishes: [recipe] };
+  }
+  return { dishes: [] };
+}
+
+// 为 9-11 月龄日计划做营养覆盖补齐
+// 复合主食已含蛋白和蔬菜，仅需补充水果
+function ensureBabyDailyCoverage(
+  dayPlan: DayPlan,
+  availableRecipes: Record<DishType, Recipe[]>,
+  weekUsedIds: Set<string>,
+): void {
+  const allDishes = [
+    ...dayPlan.breakfast.dishes,
+    ...dayPlan.lunch.dishes,
+    ...dayPlan.dinner.dishes,
+  ];
+
+  // 检测是否已覆盖水果
+  const coveredCats = new Set<FoodCategory>();
+  for (const dish of allDishes) {
+    for (const ing of dish.mainIngredients) {
+      coveredCats.add(lookupFoodCategory(ing));
+    }
+  }
+
+  // 仅补充水果，不补独立肉/菜（复合主食已含）
+  if (!coveredCats.has('fruit')) {
+    const pool = [
+      ...(availableRecipes.dessert || []),
+      ...(availableRecipes.vegetable || []),
+    ].filter(r => {
+      // 只选水果类食谱
+      return r.mainIngredients.some(ing => lookupFoodCategory(ing) === 'fruit');
+    });
+
+    const filtered = pool.filter(r => !weekUsedIds.has(r.id));
+    const recipe = pickWeightedRecipe(filtered.length > 0 ? filtered : pool);
+    if (recipe) {
+      weekUsedIds.add(recipe.id);
+      // 添加到菜品较少的餐次
+      const bfCount = dayPlan.breakfast.dishes.length;
+      const luCount = dayPlan.lunch.dishes.length;
+      const targetMeal = bfCount <= luCount ? dayPlan.breakfast : dayPlan.lunch;
+      if (!targetMeal.dishes.some(d => d.id === recipe.id)) {
+        targetMeal.dishes.push(recipe);
+      }
+    }
+  }
 }
 
 // 为一餐创建多道菜组合
@@ -126,6 +287,12 @@ function createMealPlan(
   babyAge: AgeGroup,
   dayUsedStapleNames: Set<string>
 ): MealPlan {
+  // 9-11 月龄：每餐一道复合主食（主食+动物蛋白+蔬菜），不做分散式搭配
+  const is9to11m = babyAge === '9-11m';
+  if (is9to11m) {
+    return createCompositeMeal(availableRecipes, usedIds);
+  }
+
   const dishes: Recipe[] = [];
 
   // 根据餐次和年龄选择菜品类型（科学控制每日肉蛋菜总量）
@@ -133,8 +300,8 @@ function createMealPlan(
   let optionalTypes: DishType[] = [];
   let optionalProbability = 0.5;
 
-  // 年龄段分组
-  const isBaby = babyAge === '6-8m' || babyAge === '9-11m';
+  // 年龄段分组（9-11m 已在函数入口处理，此处仅 6-8m）
+  const isBaby = babyAge === '6-8m';
   const isToddler = babyAge === '1-2y';
   const isOver2 = babyAge === '2-3y' || babyAge === '3-5y';
 
@@ -420,8 +587,8 @@ const isSoupyStaple = (r: Recipe): boolean => {
     }
   }
 
-  // 早餐保底：如果只有主食一道菜，营养不够，强制补一道蔬果或点心
-  if (mealType === 'breakfast' && dishes.length < 2) {
+  // 早餐保底：如果只有主食一道菜，营养不够，强制补一道蔬果或点心（仅 1 岁以上）
+  if (mealType === 'breakfast' && dishes.length < 2 && !isBaby) {
     const supplementTypes: DishType[] = stapleIsSoupy ? ['vegetable'] : ['vegetable', 'dessert'];
     for (const type of supplementTypes) {
       const recipe = pickWeightedRecipe(dayFiltered[type]);
@@ -528,6 +695,15 @@ export function regenerateMeal(
   usedRecipes: Recipe[],
   mealType: MealType
 ): MealPlan {
+  const age = settings.babyAge!;
+
+  // 6-8 月龄：简易辅食模式
+  if (age === '6-8m') {
+    const availableRecipes = filterRecipes(settings, customRecipes);
+    const usedIds = new Set(usedRecipes.map(r => r.id));
+    return createSimpleBabyMeal(availableRecipes, usedIds);
+  }
+
   const availableRecipes = filterRecipes(settings, customRecipes);
   const usedIds = new Set(usedRecipes.map(r => r.id));
 
@@ -541,7 +717,7 @@ export function regenerateMeal(
     dessert: availableRecipes.dessert.filter(r => !usedIds.has(r.id)),
   };
 
-  return createMealPlan(filtered, mealType, usedIds, settings.babyAge!, new Set<string>());
+  return createMealPlan(filtered, mealType, usedIds, age, new Set<string>());
 }
 
 // 交换午餐和晚餐

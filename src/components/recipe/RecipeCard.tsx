@@ -19,6 +19,10 @@ interface RecipeCardProps {
   onAddDish: (recipe: Recipe) => void;
   onInspiration: (recipe: Recipe) => void;
   readOnly?: boolean;
+  /** 可选餐次标题，覆盖默认的"早餐/午餐/晚餐" */
+  mealTitle?: string;
+  /** 可选餐次图标，配合 mealTitle 使用 */
+  mealEmoji?: string;
 }
 
 export function RecipeCard({
@@ -31,6 +35,8 @@ export function RecipeCard({
   onAddDish,
   onInspiration,
   readOnly,
+  mealTitle,
+  mealEmoji,
 }: RecipeCardProps) {
   const [showDetail, setShowDetail] = useState(false);
   const [showAddDish, setShowAddDish] = useState(false);
@@ -39,8 +45,8 @@ export function RecipeCard({
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const { favoriteIds, toggleFavorite } = useStore();
 
-  const mealIcon = mealType === 'breakfast' ? '🌅' : mealType === 'lunch' ? '☀️' : '🌙';
-  const mealLabel = mealType === 'breakfast' ? '早餐' : mealType === 'lunch' ? '午餐' : '晚餐';
+  const mealIcon = mealEmoji || (mealType === 'breakfast' ? '🌅' : mealType === 'lunch' ? '☀️' : '🌙');
+  const mealLabel = mealTitle || (mealType === 'breakfast' ? '早餐' : mealType === 'lunch' ? '午餐' : '晚餐');
 
   const handleViewDetail = (recipe: Recipe) => {
     setSelectedRecipe(recipe);

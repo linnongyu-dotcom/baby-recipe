@@ -4,7 +4,9 @@ import { WeeklyPlan, DayOfWeek, MealType, DISH_TYPE_LABELS, DAY_LABELS, AGE_GROU
 import { BRAND } from '@/config/brand';
 
 const MEAL_LABELS: Record<MealType, string> = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐' };
+const MEAL_LABELS_BABY: Record<MealType, string> = { breakfast: '第一餐辅食', lunch: '第二餐辅食', dinner: '晚餐' };
 const MEAL_EMOJI: Record<MealType, string> = { breakfast: '🌅', lunch: '☀️', dinner: '🌙' };
+const MEAL_EMOJI_BABY: Record<MealType, string> = { breakfast: '🥣', lunch: '🥄', dinner: '🌙' };
 const A4_WIDTH_MM = 210;
 const A4_HEIGHT_MM = 297;
 const MARGIN_MM = 12;
@@ -17,6 +19,11 @@ function buildDayHTML(
 ): string {
   let html = '';
 
+  // 检测是否为低龄辅食模式（晚餐为空）
+  const isBabyMode = dayPlan.dinner.dishes.length === 0;
+  const labels = isBabyMode ? MEAL_LABELS_BABY : MEAL_LABELS;
+  const emojis = isBabyMode ? MEAL_EMOJI_BABY : MEAL_EMOJI;
+
   html += `<div style="margin-bottom:16px;padding:14px 16px;background:#faf5ff;border-radius:10px;border-left:4px solid #a78bfa;">`;
   html += `<h2 style="font-size:16px;font-weight:700;color:#5b21b6;margin:0 0 10px 0;">📅 ${DAY_LABELS[day]}</h2>`;
 
@@ -24,8 +31,11 @@ function buildDayHTML(
     const mealPlan = dayPlan[meal];
     const dishCount = mealPlan.dishes.length;
 
+    // 跳过无菜品的餐次（如 6-8 月龄晚餐为空）
+    if (dishCount === 0) continue;
+
     html += `<div style="margin-bottom:10px;">`;
-    html += `<h3 style="font-size:14px;font-weight:600;color:#374151;margin:0 0 6px 0;">${MEAL_EMOJI[meal]} ${MEAL_LABELS[meal]}（${dishCount}道菜）</h3>`;
+    html += `<h3 style="font-size:14px;font-weight:600;color:#374151;margin:0 0 6px 0;">${emojis[meal]} ${labels[meal]}（${dishCount}道菜）</h3>`;
 
     for (const dish of mealPlan.dishes) {
       const typeLabel = DISH_TYPE_LABELS[dish.dishType] || dish.dishType;
@@ -89,7 +99,14 @@ function buildRecipeHTML(weeklyPlan: WeeklyPlan, ageLabel: string, targetDay?: D
       }
       return sum;
     }, 0);
-    html += `<p style="text-align:center;font-size:12px;color:#9ca3af;margin:10px 0 0 0;">共 7 天 × 21 餐 · ${totalDishes} 道菜品 · 用心为宝宝准备每一餐 ❤️</p>`;
+    const totalMeals = days.reduce((sum, day) => {
+      for (const meal of ['breakfast', 'lunch', 'dinner'] as MealType[]) {
+        if (weeklyPlan[day][meal].dishes.length > 0) sum++;
+      }
+      return sum;
+    }, 0);
+    const mealLabel = totalMeals === 21 ? '7 天 × 3 餐' : `7 天 × ${totalMeals} 餐辅食`;
+    html += `<p style="text-align:center;font-size:12px;color:#9ca3af;margin:10px 0 0 0;">共 ${mealLabel} · ${totalDishes} 道菜品 · 用心为宝宝准备每一餐 ❤️</p>`;
   }
 
   html += `</div>`;

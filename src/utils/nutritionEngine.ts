@@ -1,4 +1,4 @@
-import { DayPlan, WeeklyPlan, DAYS_OF_WEEK, AgeGroup } from '../types';
+import { DayPlan, WeeklyPlan, DAYS_OF_WEEK, AgeGroup, getAgeStage } from '../types';
 import { lookupFoodCategory, FoodCategory } from './foodDictionary';
 import { getAgeRule } from './ageRules';
 
@@ -14,6 +14,8 @@ export interface DayNutritionResult {
   covered: NutritionItem[];
   optimization: NutritionItem[];
   summary: string;
+  /** 营养检查类型 */
+  checkType: 'growth' | 'coverage' | 'balance';
 }
 
 export interface WeekNutritionItem {
@@ -105,27 +107,48 @@ export function generateSnacks(age: AgeGroup): { items: SnackItem[]; coveredKeys
   return { items, coveredKeys };
 }
 
+function checkCoverage(dayPlan: DayPlan, key: string, category: FoodCategory): boolean {
+  if (key === 'meatFish') {
+    return anyDayDishCoversAny(dayPlan, ['fishSeafood', 'redMeat', 'poultry']);
+  }
+  if (key === 'protein') {
+    return anyDayDishCoversAny(dayPlan, ['egg', 'fishSeafood', 'redMeat', 'poultry']);
+  }
+  if (key === 'iron') {
+    // 铁来源：红肉或强化铁的米粉/粥（含大米主食材的主食也算铁来源）
+    const hasIronFood = anyDayDishCoversAny(dayPlan, ['redMeat', 'fishSeafood', 'poultry', 'egg']);
+    if (hasIronFood) return true;
+    // 含大米的主食（米粉、米粥等）视为铁来源
+    return collectDishes(dayPlan).some(d =>
+      d.dishType === 'staple' && d.mainIngredients.some(ing => ing.includes('大米') || ing.includes('米粉'))
+    );
+  }
+  if (key === 'newFood') {
+    // 新食物体验：当天有任何不常见的食材即视为有体验
+    return collectDishes(dayPlan).length > 0;
+  }
+  if (key === 'dairy' || key === 'soy') {
+    return anyDayDishCovers(dayPlan, category);
+  }
+  if (key === 'vegetable') {
+    return anyDayDishCoversAny(dayPlan, ['darkVeg', 'lightVeg']);
+  }
+  return anyDayDishCovers(dayPlan, category);
+}
+
 export function analyzeDayNutrition(dayPlan: DayPlan, age: AgeGroup): DayNutritionResult {
   const rule = getAgeRule(age);
+  const stage = getAgeStage(age);
+
   if (!rule) {
-    return { covered: [], optimization: [], summary: '请先完成宝宝信息设置。' };
+    return { covered: [], optimization: [], summary: '请先完成宝宝信息设置。', checkType: 'balance' };
   }
 
   const covered: NutritionItem[] = [];
   const optimization: NutritionItem[] = [];
 
   for (const check of rule.dailyChecks) {
-    let isCovered: boolean;
-
-    if (check.key === 'meatFish') {
-      isCovered = anyDayDishCoversAny(dayPlan, ['fishSeafood', 'redMeat', 'poultry']);
-    } else if (check.key === 'dairy') {
-      isCovered = anyDayDishCovers(dayPlan, 'dairy');
-    } else if (check.key === 'soy') {
-      isCovered = anyDayDishCovers(dayPlan, 'soyProduct');
-    } else {
-      isCovered = anyDayDishCovers(dayPlan, check.category);
-    }
+    const isCovered = checkCoverage(dayPlan, check.key, check.category);
 
     const item: NutritionItem = {
       key: check.key,
@@ -142,15 +165,45 @@ export function analyzeDayNutrition(dayPlan: DayPlan, age: AgeGroup): DayNutriti
     }
   }
 
-  const summary = buildDaySummary(covered, optimization);
+  const checkType = stage === 'growth_check' ? 'growth' : stage === 'coverage_check' ? 'coverage' : 'balance';
+  const summary = buildDaySummary(covered, optimization, stage);
 
-  return { covered, optimization, summary };
+  return { covered, optimization, summary, checkType };
 }
 
 function buildDaySummary(
   covered: NutritionItem[],
   optimization: NutritionItem[],
+  stage: string,
 ): string {
+  // 6-8 个月（辅食初期）：成长里程碑视角
+  if (stage === 'growth_check') {
+    if (optimization.length === 0) {
+      return '今天宝宝尝试了多种食物，辅食成长表现很棒！继续观察宝宝的反应哦~';
+    }
+    const coveredCount = covered.length;
+    const total = covered.length + optimization.length;
+    if (coveredCount >= total * 0.5) {
+      return '宝宝正在逐步建立辅食习惯，今天已经有不错的尝试，继续保持哦~';
+    }
+    return '辅食初期重在尝试，不必追求每餐都覆盖全部种类。奶仍然是宝宝的主要营养来源。';
+  }
+
+  // 9-11 个月（辅食进阶）：营养覆盖视角
+  if (stage === 'coverage_check') {
+    if (optimization.length === 0) {
+      return '今日辅食搭配很全面，已覆盖主要营养类别，继续保持哦~';
+    }
+    const missing = optimization.filter(o => o.key !== 'dairy' && o.key !== 'lightVeg');
+    const nonCritical = optimization.filter(o => o.key === 'dairy' || o.key === 'lightVeg');
+    if (missing.length === 0 && nonCritical.length > 0) {
+      return '今日基本营养类别已覆盖，可适当增加种类丰富度。';
+    }
+    const names = optimization.map(o => o.name).join('、');
+    return `今日已覆盖部分营养类别，建议补充${names}，逐步丰富辅食种类。`;
+  }
+
+  // 1 岁以上：均衡检查
   if (optimization.length === 0) {
     return '今日饮食搭配很全面，已覆盖主要营养类别，继续保持哦~';
   }
@@ -158,19 +211,13 @@ function buildDaySummary(
   const coveredCount = covered.length;
   const total = covered.length + optimization.length;
 
-  const parts: string[] = [];
-
   if (coveredCount >= total * 0.6) {
-    parts.push('今日饮食整体较均衡');
-  } else {
-    parts.push('今日已覆盖部分营养类别');
+    const names = optimization.map(o => o.name).join('、');
+    return `今日饮食整体较均衡，建议补充${names}，提高食物多样性。`;
   }
 
   const names = optimization.map(o => o.name).join('、');
-  parts.push(`建议补充${names}`);
-
-  parts.push('提高食物多样性');
-  return parts.join('，') + '。';
+  return `今日已覆盖部分营养类别，建议补充${names}，提高食物多样性。`;
 }
 
 export function analyzeWeekNutrition(weeklyPlan: WeeklyPlan, age: AgeGroup): WeekNutritionResult {
@@ -186,6 +233,13 @@ export function analyzeWeekNutrition(weeklyPlan: WeeklyPlan, age: AgeGroup): Wee
       if (!dayPlan) continue;
       if (check.key === 'meat') {
         if (anyDayDishCoversAny(dayPlan, ['redMeat', 'poultry'])) count++;
+      } else if (check.key === 'iron') {
+        if (anyDayDishCoversAny(dayPlan, ['redMeat', 'fishSeafood', 'poultry', 'egg']) ||
+            collectDishes(dayPlan).some(d =>
+              d.dishType === 'staple' && d.mainIngredients.some(ing => ing.includes('大米') || ing.includes('米粉'))
+            )) {
+          count++;
+        }
       } else {
         if (anyDayDishCovers(dayPlan, check.category)) count++;
       }

@@ -4,7 +4,7 @@ import { recipes } from '../src/data/recipes';
 
 // 诊断3-4岁午餐为什么缺汤
 const settings: UserSettings = {
-  babyAge: '3-4y',
+  babyAge: '3-5y',
   allergies: [],
   dislikes: [],
   likes: [],

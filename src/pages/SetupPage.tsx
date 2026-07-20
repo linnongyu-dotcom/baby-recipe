@@ -6,7 +6,7 @@ import { useStore } from '@/store/useStore';
 import { Button } from '@/components/common/Button';
 import { Card } from '@/components/common/Card';
 import { Tag } from '@/components/common/Tag';
-import { AGE_GROUP_LABELS, AgeGroup, COMMON_ALLERGIES, COMMON_FOODS } from '@/types';
+import { AGE_GROUP_LABELS, AGE_GROUP_SUBTITLES, AgeGroup, COMMON_ALLERGIES, COMMON_FOODS } from '@/types';
 import { BRAND, setPageTitle } from '@/config/brand';
 
 interface FoodSelectorProps {
@@ -268,6 +268,7 @@ export function SetupPage() {
                   }`}
                 >
                   <div className="text-lg font-medium">{AGE_GROUP_LABELS[age]}</div>
+                  <div className="text-xs text-gray-400 mt-0.5">{AGE_GROUP_SUBTITLES[age]}</div>
                 </motion.button>
               ))}
             </div>

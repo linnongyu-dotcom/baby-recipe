@@ -1,7 +1,7 @@
 import { generateWeeklyPlan } from '../src/utils/recipeGenerator';
 import { UserSettings, AgeGroup, Recipe, DishType } from '../src/types';
 
-const AGES: AgeGroup[] = ['6-8m', '9-11m', '1-2y', '2-3y', '3-4y'];
+const AGES: AgeGroup[] = ['6-8m', '9-11m', '1-2y', '2-3y', '3-5y'];
 
 interface TestResult {
   age: AgeGroup;
@@ -71,6 +71,11 @@ function testPlan(settings: UserSettings, runNum: number): TestResult {
       // Check empty meal
       if (dishes.length === 0) {
         stats.emptyMeals++;
+        // 6-8 月龄：晚餐始终为空，午餐 50% 概率为空（1-2餐辅食模式）
+        // 9-11 月龄：晚餐始终为空（2餐辅食模式）
+        if (settings.babyAge === '6-8m' || settings.babyAge === '9-11m') {
+          continue;
+        }
         errors.push(`${dayName}${meal.label}：无菜品`);
         continue;
       }
@@ -78,6 +83,10 @@ function testPlan(settings: UserSettings, runNum: number): TestResult {
       // Check single dish meals (only concerning for non-breakfast or breakfast with soupy staple)
       if (dishes.length === 1) {
         stats.singleDishMeals++;
+        // 6-8 月龄：每餐仅 1 道菜是正常设计
+        if (settings.babyAge === '6-8m') {
+          continue;
+        }
         if (meal.label === '早餐') {
           stats.breakfastSingleDish++;
         }
@@ -101,7 +110,7 @@ function testPlan(settings: UserSettings, runNum: number): TestResult {
       const desserts = dishes.filter(d => d.dishType === 'dessert');
 
       // Check lunch congee for 2+ years
-      const isOver2 = settings.babyAge === '2-3y' || settings.babyAge === '3-4y';
+      const isOver2 = settings.babyAge === '2-3y' || settings.babyAge === '3-5y';
       if (meal.label === '午餐' && isOver2) {
         const hasCongee = dishes.some(d => d.name.includes('粥') && d.dishType === 'staple');
         if (hasCongee) {
