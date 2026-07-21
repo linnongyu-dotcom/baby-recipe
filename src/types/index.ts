@@ -163,3 +163,42 @@ export const COMMON_FOODS: string[] = [
   '苹果', '香蕉', '梨', '橙子', '西瓜',
   '豆腐',
 ];
+
+// ===== 宝宝食材添加记录 =====
+
+// 食材添加状态
+export type FoodStatus = 'untried' | 'trying' | 'accepted' | 'unsuitable';
+
+// 食材分类
+export type FoodIntroCategory = 'grain' | 'vegetable' | 'fruit' | 'protein';
+
+// 食材分类信息
+export const FOOD_CATEGORY_INFO: Record<FoodIntroCategory, { label: string; emoji: string }> = {
+  grain: { label: '谷物类', emoji: '🌾' },
+  vegetable: { label: '蔬菜类', emoji: '🥕' },
+  fruit: { label: '水果类', emoji: '🍎' },
+  protein: { label: '肉蛋类', emoji: '🥩' },
+};
+
+// 观察结果（尝试中阶段的记录）
+export type FoodObservation = 'good' | 'disliked' | 'abnormal';
+
+// 单条食材记录
+export interface FoodRecord {
+  name: string;
+  category: FoodIntroCategory;
+  status: FoodStatus;
+  tryDate?: string;       // 开始尝试日期 ISO string
+  acceptedDate?: string;  // 已接受日期 ISO string
+  note?: string;          // 备注
+  observation?: FoodObservation; // 尝试中的观察结果
+}
+
+// 推荐食材
+export interface FoodRecommendation {
+  name: string;
+  category: FoodIntroCategory;
+  reason: string;        // 推荐原因
+  suggestedMonth: number; // 建议添加月龄 6/7/8
+  addMethod: string;     // 添加方式建议
+}

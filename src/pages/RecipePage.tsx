@@ -7,7 +7,9 @@ import { Button } from '@/components/common/Button';
 import { Modal } from '@/components/common/Modal';
 import { RecipeCard } from '@/components/recipe/RecipeCard';
 import { ComplementaryFeedingPlan } from '@/components/recipe/ComplementaryFeedingPlan';
-import { DAYS_OF_WEEK, DAY_LABELS, DayOfWeek, AGE_GROUP_LABELS, AgeGroup, WeeklyPlan, getAgeStage, NUTRITION_CHECK_TITLES } from '@/types';
+import { FoodTracker } from '@/components/recipe/FoodTracker';
+import { NextRecommendation } from '@/components/recipe/NextRecommendation';
+import { DAYS_OF_WEEK, DAY_LABELS, DayOfWeek, AGE_GROUP_LABELS, AgeGroup, WeeklyPlan, getAgeStage, NUTRITION_CHECK_TITLES, FoodRecord } from '@/types';
 import { downloadRecipePDF } from '@/utils/pdfGenerator';
 import { encodeShareData, decodeShareData } from '@/utils/shareUtils';
 import { analyzeDayNutrition, analyzeWeekNutrition, generateSnacks } from '@/utils/nutritionEngine';
@@ -110,7 +112,8 @@ export function RecipePage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const store = useStore();
-  const { weeklyPlan, settings, babyName, regenerateMeal, regenerateDish, removeDish, swapMeals, setCustomMeal, addDish } = store;
+  const { weeklyPlan, settings, babyName, regenerateMeal, regenerateDish, removeDish, swapMeals, setCustomMeal, addDish,
+    foodRecords, feedingMonth, addFoodRecord, setFeedingMonth } = store;
 
   const shareParam = searchParams.get('share');
   const [sharedData, setSharedData] = useState<{ weeklyPlan: WeeklyPlan; ageLabel: string; ageGroup?: AgeGroup } | null>(null);
@@ -119,9 +122,7 @@ export function RecipePage() {
   const [shareCopied, setShareCopied] = useState(false);
   const [showWeeklyPlan, setShowWeeklyPlan] = useState(false);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
-  const [feedingMonth, setFeedingMonth] = useState<6 | 7 | 8>(
-    settings.babyAge === '6-8m' ? 6 : 7
-  );
+  const [triggerAddFood, setTriggerAddFood] = useState(false);
 
   useEffect(() => {
     if (shareParam) {
@@ -206,6 +207,10 @@ export function RecipePage() {
 
   const handleDownloadToday = () => handleDownload(todayDay);
   const handleDownloadWeek = () => handleDownload(null);
+
+  const handleAddFood = (record: FoodRecord) => {
+    addFoodRecord(record);
+  };
 
   const nutritionGuide = settings.babyAge ? getNutritionGuide(settings.babyAge) : null;
 
@@ -407,6 +412,26 @@ export function RecipePage() {
             <ComplementaryFeedingPlan month={feedingMonth} />
           </motion.div>
         )}
+
+        {/* 食材添加记录（6-8 月龄） */}
+         {is6to8m && (
+           <>
+             <NextRecommendation
+               babyMonth={feedingMonth}
+               foodRecords={foodRecords}
+               onAddFood={() => setTriggerAddFood(prev => !prev)}
+             />
+             <div className="mt-4">
+               <FoodTracker
+                 babyMonth={feedingMonth}
+                 foodRecords={foodRecords}
+                 onSaveFood={handleAddFood}
+                 openAddModal={triggerAddFood}
+                 onModalClosed={() => setTriggerAddFood(false)}
+               />
+             </div>
+           </>
+         )}
 
         {/* 今日推荐（9-11m 及以上） */}
         {displayPlan && !is6to8m && (

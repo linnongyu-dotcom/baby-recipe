@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { UserSettings, WeeklyPlan, Recipe, DayOfWeek, MealType, MealPlan } from '../types';
+import { UserSettings, WeeklyPlan, Recipe, DayOfWeek, MealType, MealPlan, FoodRecord } from '../types';
 import { generateWeeklyPlan, regenerateMeal, regenerateDish, swapMeals } from '../utils/recipeGenerator';
 
 interface AppState {
@@ -16,6 +16,10 @@ interface AppState {
   favoriteIds: string[];
   // 宝宝姓名
   babyName: string;
+  // 食材添加记录（6-8月龄）
+  foodRecords: FoodRecord[];
+  // 当前辅食月龄 6/7/8
+  feedingMonth: 6 | 7 | 8;
 
   // 操作方法
   setBabyAge: (age: UserSettings['babyAge']) => void;
@@ -34,6 +38,11 @@ interface AppState {
   removeCustomRecipe: (id: string) => void;
   toggleFavorite: (id: string) => void;
   resetSettings: () => void;
+  // 食材添加记录操作
+  addFoodRecord: (record: FoodRecord) => void;
+  updateFoodRecord: (name: string, updates: Partial<FoodRecord>) => void;
+  removeFoodRecord: (name: string) => void;
+  setFeedingMonth: (month: 6 | 7 | 8) => void;
 }
 
 const defaultSettings: UserSettings = {
@@ -52,6 +61,8 @@ export const useStore = create<AppState>()(
       customRecipes: [],
       favoriteIds: [],
       babyName: '',
+      foodRecords: [],
+      feedingMonth: 6,
 
       setBabyAge: (age) => set((state) => ({
         settings: { ...state.settings, babyAge: age },
@@ -230,6 +241,30 @@ export const useStore = create<AppState>()(
         };
       }),
 
+      addFoodRecord: (record) => set((state) => {
+        const exists = state.foodRecords.find(r => r.name === record.name);
+        if (exists) {
+          return {
+            foodRecords: state.foodRecords.map(r =>
+              r.name === record.name ? record : r
+            ),
+          };
+        }
+        return { foodRecords: [...state.foodRecords, record] };
+      }),
+
+      updateFoodRecord: (name, updates) => set((state) => ({
+        foodRecords: state.foodRecords.map(r =>
+          r.name === name ? { ...r, ...updates } : r
+        ),
+      })),
+
+      removeFoodRecord: (name) => set((state) => ({
+        foodRecords: state.foodRecords.filter(r => r.name !== name),
+      })),
+
+      setFeedingMonth: (month) => set({ feedingMonth: month }),
+
       resetSettings: () => set({
         settings: defaultSettings,
         weeklyPlan: null,
@@ -237,11 +272,13 @@ export const useStore = create<AppState>()(
         customRecipes: [],
         favoriteIds: [],
         babyName: '',
+        foodRecords: [],
+        feedingMonth: 6,
       }),
     }),
     {
       name: 'baby-recipe-storage',
-      version: 35,
+      version: 36,
       migrate: (persistedState: any, version: number) => {
         if (version < 30) {
           return {
@@ -278,6 +315,14 @@ export const useStore = create<AppState>()(
           return {
             ...persistedState,
             weeklyPlan: null,
+          };
+        }
+        // v36: 新增 foodRecords、feedingMonth
+        if (version < 36) {
+          return {
+            ...persistedState,
+            foodRecords: persistedState?.foodRecords || [],
+            feedingMonth: persistedState?.feedingMonth || 6,
           };
         }
         return persistedState;
