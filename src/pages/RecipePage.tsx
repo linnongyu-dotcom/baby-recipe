@@ -24,7 +24,62 @@ interface NutritionGuide {
   avoid: string[];
 }
 
-function getNutritionGuide(age: AgeGroup): NutritionGuide {
+function getNutritionGuide(age: AgeGroup, month?: number): NutritionGuide {
+  // 6-8月龄根据具体月份返回不同内容
+  if (age === '6-8m' && month) {
+    const guidesByMonth: Record<number, NutritionGuide> = {
+      6: {
+        title: '6个月 辅食添加初期',
+        dailyNeeds: [
+          '奶量：700-800ml/天（母乳或配方奶为主）',
+          '辅食：1餐，从1勺（约5ml）开始逐步加量',
+          '首选强化铁米粉，用母乳或配方奶调成稀糊状',
+          '每次只添加一种新食物，观察3-5天无过敏再换下一种',
+        ],
+        tips: [
+          '食物形态：细腻泥糊状，流动性强，无任何颗粒',
+          '不加盐、糖、蜂蜜、酱油等任何调味品',
+          '第一口辅食选在上午，宝宝精神状态好时',
+          '先喂辅食再喂奶，让宝宝逐渐适应',
+        ],
+        avoid: ['蜂蜜（肉毒杆菌风险）', '盐和糖', '整颗坚果', '鲜牛奶', '果汁', '蛋清'],
+      },
+      7: {
+        title: '7个月 辅食添加初期',
+        dailyNeeds: [
+          '奶量：600-800ml/天',
+          '辅食：1-2餐，每餐逐步增至2-3勺（约15-30ml）',
+          '继续添加单一食材泥：菜泥、果泥、肉泥等',
+          '每次添加新食物仍观察3-5天，建立食物清单',
+        ],
+        tips: [
+          '食物形态：泥糊状，可稍微浓稠一些',
+          '逐步丰富食材种类：绿叶菜、根茎类、水果、红肉',
+          '优先补铁：红肉泥、肝泥每周2-3次',
+          '蛋黄从1/4个开始尝试，观察是否过敏',
+        ],
+        avoid: ['蜂蜜', '盐和糖', '整颗坚果', '鲜牛奶', '果汁', '蛋清'],
+      },
+      8: {
+        title: '8个月 辅食添加初期',
+        dailyNeeds: [
+          '奶量：600-800ml/天',
+          '辅食：2餐，每餐约30-50ml',
+          '可尝试混合食材（已排敏的2-3种搭配）',
+          '每日谷物10-20g、蔬菜10-20g、肉/鱼/禽10-20g',
+        ],
+        tips: [
+          '食物形态：稠粥、碎末状，可保留少量细小颗粒锻炼咀嚼',
+          '逐步增加蛋黄量至1/2个到1个',
+          '可尝试手指食物：蒸熟的胡萝卜条、西兰花等',
+          '开始培养定时定点进餐习惯，坐餐椅',
+        ],
+        avoid: ['蜂蜜', '盐和糖', '整颗坚果', '鲜牛奶', '容易呛噎的大块食物'],
+      },
+    };
+    return guidesByMonth[month] || guidesByMonth[6];
+  }
+
   const guides: Record<AgeGroup, NutritionGuide> = {
     '6-8m': {
       title: '6-8个月 辅食添加初期',
@@ -249,11 +304,9 @@ export function RecipePage() {
     addFoodRecord(record);
   };
 
-  const nutritionGuideBase = effectiveAgeGroup ? getNutritionGuide(effectiveAgeGroup) : null;
-  // 6-8月龄时标题显示具体月份
-  const nutritionGuide = nutritionGuideBase && is6to8m && babyAgeInfo
-    ? { ...nutritionGuideBase, title: `${babyAgeInfo.totalMonths}个月 辅食添加初期` }
-    : nutritionGuideBase;
+  const nutritionGuide = effectiveAgeGroup
+    ? getNutritionGuide(effectiveAgeGroup, babyAgeInfo?.totalMonths)
+    : null;
 
   const getDayNutritionSummary = (day: DayOfWeek) => {
     const dayPlan = displayPlan[day];
