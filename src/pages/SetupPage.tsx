@@ -171,6 +171,7 @@ export function SetupPage() {
   const isOnboarding = !hasBabies;
   const babyAgeInfo = currentBaby ? calcAge(currentBaby.birthDate) : null;
   const isInfantFeeding = babyAgeInfo?.growthStage === 'infant_feeding';
+  const is6to8mActual = babyAgeInfo?.ageGroup === '6-8m';
 
   // 新建宝宝表单
   const [birthDate, setBirthDate] = useState('');
@@ -392,7 +393,7 @@ export function SetupPage() {
             )}
 
             {/* 不喜欢的食物 */}
-            {settings.babyAge && settings.babyAge !== '6-8m' && (
+            {!isInfantFeeding && !is6to8mActual && (
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -414,7 +415,7 @@ export function SetupPage() {
             )}
 
             {/* 喜欢的食物 */}
-            {settings.babyAge && settings.babyAge !== '6-8m' && (
+            {!isInfantFeeding && !is6to8mActual && (
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
