@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, Navigate } from 'react-router-dom';
 import { useState, useEffect, useMemo } from 'react';
 import { Settings, Download, ChevronDown, Loader2, Share2, Check, User } from 'lucide-react';
 import { useStore } from '@/store/useStore';
@@ -139,6 +139,16 @@ export function RecipePage() {
   const is9to11m = effectiveAgeGroup === '9-11m';
   const isTwoMeal = is6to8m || is9to11m;
 
+  // 6-8月龄自动匹配当前月份
+  useEffect(() => {
+    if (is6to8m && babyAgeInfo) {
+      const m = babyAgeInfo.totalMonths;
+      if (m >= 6 && m <= 8) {
+        setFeedingMonth(m as 6 | 7 | 8);
+      }
+    }
+  }, [is6to8m, babyAgeInfo?.totalMonths]);
+
   useEffect(() => {
     if (shareParam) {
       const decoded = decodeShareData(shareParam);
@@ -196,13 +206,11 @@ export function RecipePage() {
   // 无宝宝时跳转到创建页
   if (!weeklyPlan && !isShareMode && !isInfantFeeding) {
     if (babies.length === 0) {
-      navigate('/setup');
-      return null;
+      return <Navigate to="/setup" replace />;
     }
     // 有宝宝但没有食谱，跳转到设置页生成
     if (effectiveAgeGroup) {
-      navigate('/setup');
-      return null;
+      return <Navigate to="/setup" replace />;
     }
   }
 
