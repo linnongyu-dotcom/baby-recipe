@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Trash2, ArrowLeft, Calendar, User } from 'lucide-react';
 import { useStore } from '@/store/useStore';
@@ -7,7 +7,7 @@ import { Button } from '@/components/common/Button';
 import { Modal } from '@/components/common/Modal';
 import { GROWTH_STAGE_INFO, BabyProfile } from '@/types';
 import { calcAge } from '@/utils/babyProfile';
-import { BRAND, setPageTitle } from '@/config/brand';
+import { setPageTitle } from '@/config/brand';
 
 export function BabyProfilePage() {
   const navigate = useNavigate();
