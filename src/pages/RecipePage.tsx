@@ -249,7 +249,11 @@ export function RecipePage() {
     addFoodRecord(record);
   };
 
-  const nutritionGuide = effectiveAgeGroup ? getNutritionGuide(effectiveAgeGroup) : null;
+  const nutritionGuideBase = effectiveAgeGroup ? getNutritionGuide(effectiveAgeGroup) : null;
+  // 6-8月龄时标题显示具体月份
+  const nutritionGuide = nutritionGuideBase && is6to8m && babyAgeInfo
+    ? { ...nutritionGuideBase, title: `${babyAgeInfo.totalMonths}个月 辅食添加初期` }
+    : nutritionGuideBase;
 
   const getDayNutritionSummary = (day: DayOfWeek) => {
     const dayPlan = displayPlan[day];

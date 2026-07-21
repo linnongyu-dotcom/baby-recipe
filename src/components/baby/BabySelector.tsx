@@ -27,6 +27,45 @@ export function BabySelector({ onNavigateToProfile }: BabySelectorProps) {
     setOpen(!open);
   };
 
+  // 计算下拉框安全定位，避免溢出视口边缘
+  const DROPDOWN_W = 256; // w-64
+  const GAP = 8;
+  const PADDING = 8;
+
+  let dropdownStyle: React.CSSProperties = {};
+  if (btnRect) {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const estimatedHeight = 400;
+
+    // 默认右对齐：下拉框右边缘 = 按钮右边缘
+    const right = vw - btnRect.right;
+    const leftEdge = btnRect.right - DROPDOWN_W;
+
+    const style: React.CSSProperties = {
+      position: 'fixed',
+      zIndex: 9999,
+    };
+
+    // 上下：按钮下方空间不够则翻到上方
+    if (btnRect.bottom + GAP + estimatedHeight > vh && btnRect.top - estimatedHeight > GAP) {
+      style.bottom = vh - btnRect.top + GAP;
+    } else {
+      style.top = btnRect.bottom + GAP;
+    }
+
+    // 左右：溢出则贴近对应边缘
+    if (right < PADDING) {
+      style.right = PADDING;
+    } else if (leftEdge < PADDING) {
+      style.left = PADDING;
+    } else {
+      style.right = right;
+    }
+
+    dropdownStyle = style;
+  }
+
   return (
     <div className="relative">
       <motion.button
@@ -65,11 +104,7 @@ export function BabySelector({ onNavigateToProfile }: BabySelectorProps) {
                 initial={{ opacity: 0, y: -8, scale: 0.95 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -8, scale: 0.95 }}
-                style={{
-                  position: 'fixed',
-                  top: btnRect.bottom + 8,
-                  right: window.innerWidth - btnRect.right,
-                }}
+                style={dropdownStyle}
                 className="w-64 bg-white rounded-xl shadow-xl border border-purple-100 overflow-hidden z-[9999]"
               >
                 <div className="p-2">
