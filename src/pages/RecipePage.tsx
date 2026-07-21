@@ -47,7 +47,7 @@ function getNutritionGuide(age: AgeGroup, month?: number): NutritionGuide {
       7: {
         title: '7个月 辅食添加初期',
         dailyNeeds: [
-          '奶量：700-800ml/天',
+          '奶量：600-800ml/天',
           '辅食：1-2餐，每餐逐步增至2-3勺（约15-30ml）',
           '继续添加单一食材泥：菜泥、果泥、肉泥等',
           '每次添加新食物仍观察3-5天，建立食物清单',
@@ -63,7 +63,7 @@ function getNutritionGuide(age: AgeGroup, month?: number): NutritionGuide {
       8: {
         title: '8个月 辅食添加初期',
         dailyNeeds: [
-          '奶量：700-800ml/天',
+          '奶量：600-800ml/天',
           '辅食：2餐，每餐约30-50ml',
           '可尝试混合食材（已排敏的2-3种搭配）',
           '每日谷物10-20g、蔬菜10-20g、肉/鱼/禽10-20g',
