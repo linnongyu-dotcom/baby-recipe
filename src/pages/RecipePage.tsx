@@ -413,21 +413,21 @@ export function RecipePage() {
           </motion.div>
         )}
 
-        {/* 食材添加记录（6-8 月龄） */}
+        {/* 宝宝添加记录（6-8 月龄） */}
          {is6to8m && (
            <>
-             <NextRecommendation
+             <FoodTracker
                babyMonth={feedingMonth}
                foodRecords={foodRecords}
-               onAddFood={() => setTriggerAddFood(prev => !prev)}
+               onSaveFood={handleAddFood}
+               openAddModal={triggerAddFood}
+               onModalClosed={() => setTriggerAddFood(false)}
              />
              <div className="mt-4">
-               <FoodTracker
+               <NextRecommendation
                  babyMonth={feedingMonth}
                  foodRecords={foodRecords}
-                 onSaveFood={handleAddFood}
-                 openAddModal={triggerAddFood}
-                 onModalClosed={() => setTriggerAddFood(false)}
+                 onAddFood={() => setTriggerAddFood(prev => !prev)}
                />
              </div>
            </>
