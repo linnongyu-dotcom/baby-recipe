@@ -325,8 +325,8 @@ export function SetupPage() {
           </Card>
         </motion.div>
 
-        {/* 不喜欢的食物（仅设置模式） */}
-        {isSettingsMode && (
+        {/* 不喜欢的食物（仅设置模式，6-8月龄不显示） */}
+        {isSettingsMode && settings.babyAge !== '6-8m' && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -347,8 +347,8 @@ export function SetupPage() {
           </motion.div>
         )}
 
-        {/* 喜欢的食物（仅设置模式） */}
-        {isSettingsMode && (
+        {/* 喜欢的食物（仅设置模式，6-8月龄不显示） */}
+        {isSettingsMode && settings.babyAge !== '6-8m' && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
