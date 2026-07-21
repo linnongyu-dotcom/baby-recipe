@@ -19,6 +19,41 @@ export const AGE_GROUP_SUBTITLES: Record<AgeGroup, string> = {
   '3-5y': '多样化饮食期',
 };
 
+// ===== 宝宝成长档案 =====
+
+// 成长阶段
+export type GrowthStage = 'infant_feeding' | 'complementary_start' | 'complementary_advance' | 'toddler_diet';
+
+// 成长阶段信息
+export const GROWTH_STAGE_INFO: Record<GrowthStage, { label: string; emoji: string; description: string }> = {
+  infant_feeding: { label: '婴儿喂养期', emoji: '🍼', description: '奶量知识 · 辅食准备' },
+  complementary_start: { label: '辅食添加期', emoji: '🌱', description: '逐步尝试辅食' },
+  complementary_advance: { label: '辅食进阶期', emoji: '🍚', description: '辅食逐渐丰富' },
+  toddler_diet: { label: '幼儿饮食期', emoji: '🥗', description: '规律三餐饮食' },
+};
+
+// 宝宝档案
+export interface BabyProfile {
+  id: string;
+  birthDate: string; // ISO date string YYYY-MM-DD
+  nickname?: string;
+  // 后续扩展预留
+  triedFoods?: string[];
+  allergyRecords?: string[];
+  foodPreferences?: string[];
+  growthRecords?: { date: string; height?: number; weight?: number }[];
+}
+
+// 年龄计算结果
+export interface BabyAgeInfo {
+  totalMonths: number;
+  totalDays: number;
+  displayText: string; // "9个月12天" 或 "1岁3个月"
+  ageGroup: AgeGroup | null; // null 表示 0-5 月龄，暂无对应食谱年龄组
+  growthStage: GrowthStage;
+  isUnderOneYear: boolean;
+}
+
 // 喂养阶段类型
 export type AgeStage = 'growth_check' | 'coverage_check' | 'balance_check';
 

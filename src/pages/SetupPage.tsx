@@ -1,13 +1,15 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Baby, AlertTriangle, Heart, ThumbsDown, Plus, X, User } from 'lucide-react';
+import { AlertTriangle, Heart, ThumbsDown, Plus, X, User, Calendar } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '@/store/useStore';
 import { Button } from '@/components/common/Button';
 import { Card } from '@/components/common/Card';
 import { Tag } from '@/components/common/Tag';
-import { AGE_GROUP_LABELS, AGE_GROUP_SUBTITLES, AgeGroup, COMMON_ALLERGIES, COMMON_FOODS } from '@/types';
-import { BRAND, setPageTitle } from '@/config/brand';
+import { BabyProfileCard } from '@/components/baby/BabyProfileCard';
+import { COMMON_ALLERGIES, COMMON_FOODS, GROWTH_STAGE_INFO } from '@/types';
+import { calcAge } from '@/utils/babyProfile';
+import { setPageTitle } from '@/config/brand';
 
 interface FoodSelectorProps {
   title: string;
@@ -61,7 +63,6 @@ function FoodSelector({
         </h2>
       </div>
 
-      {/* 已选标签 */}
       {selected.length > 0 && (
         <div className="mb-4 p-3 bg-gray-50 rounded-xl">
           <div className="text-xs text-gray-500 mb-2">已选择：</div>
@@ -88,7 +89,6 @@ function FoodSelector({
         </div>
       )}
 
-      {/* 预设标签 */}
       <div className="flex flex-wrap gap-2 mb-4">
         {presetItems
           .filter(item => !selected.includes(item))
@@ -104,7 +104,6 @@ function FoodSelector({
           ))}
       </div>
 
-      {/* 自定义输入 */}
       <div className="mt-4">
         {!showInput ? (
           <motion.button
@@ -157,25 +156,34 @@ export function SetupPage() {
   const navigate = useNavigate();
   const {
     settings,
-    babyName,
+    babies,
+    currentBabyId,
     isSetupComplete,
-    setBabyAge,
     setAllergies,
     setDislikes,
     setLikes,
-    setBabyName,
+    addBaby,
     generatePlan,
   } = useStore();
 
-  const isSettingsMode = isSetupComplete;
+  const hasBabies = babies.length > 0;
+  const currentBaby = babies.find(b => b.id === currentBabyId);
+  const isOnboarding = !hasBabies;
+  const babyAgeInfo = currentBaby ? calcAge(currentBaby.birthDate) : null;
+  const isInfantFeeding = babyAgeInfo?.growthStage === 'infant_feeding';
+
+  // 新建宝宝表单
+  const [birthDate, setBirthDate] = useState('');
+  const [nickname, setNickname] = useState('');
+  const today = new Date().toISOString().slice(0, 10);
 
   useEffect(() => {
-    setPageTitle(isSettingsMode ? '设置' : undefined);
-  }, [isSettingsMode]);
-
-  const handleAgeSelect = (age: AgeGroup) => {
-    setBabyAge(age);
-  };
+    if (isOnboarding) {
+      setPageTitle('创建宝宝档案');
+    } else {
+      setPageTitle(isSetupComplete ? '设置' : undefined);
+    }
+  }, [isOnboarding, isSetupComplete]);
 
   const handleAllergyToggle = (item: string) => {
     const current = settings.allergies;
@@ -204,8 +212,21 @@ export function SetupPage() {
     }
   };
 
+  const handleCreateBaby = () => {
+    if (!birthDate) return;
+    const id = addBaby(birthDate, nickname || undefined);
+    setBirthDate('');
+    setNickname('');
+    // 创建后直接进入食谱
+    generatePlan();
+    navigate('/recipe');
+  };
+
   const handleGenerate = () => {
-    if (!settings.babyAge) return;
+    if (isInfantFeeding) {
+      navigate('/recipe');
+      return;
+    }
     generatePlan();
     navigate('/recipe');
   };
@@ -219,7 +240,17 @@ export function SetupPage() {
           animate={{ opacity: 1, y: 0 }}
           className="text-center mb-8"
         >
-          {isSettingsMode ? (
+          {isOnboarding ? (
+            <>
+              <div className="text-5xl mb-4">👶</div>
+              <h1 className="text-3xl font-bold text-gray-800 mb-2">
+                创建宝宝成长档案
+              </h1>
+              <p className="text-gray-600">
+                为了给宝宝推荐适合年龄的内容，请填写宝宝出生日期
+              </p>
+            </>
+          ) : (
             <>
               <h1 className="text-3xl font-bold text-gray-800 mb-2">
                 ⚙️ 设置
@@ -228,166 +259,203 @@ export function SetupPage() {
                 完善宝宝信息，推荐会越来越符合宝宝的饮食习惯。
               </p>
             </>
-          ) : (
-            <>
-              <h1 className="text-3xl font-bold text-gray-800 mb-2">
-                {BRAND.slogan}
-              </h1>
-              <p className="text-gray-600">
-                {BRAND.description}
-              </p>
-            </>
           )}
         </motion.div>
 
-        {/* 年龄选择 */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="mb-6"
-        >
-          <Card hoverable={false} className="p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Baby className="w-5 h-5 text-purple-500" />
-              <h2 className="text-lg font-semibold text-gray-800">
-                宝宝年龄 <span className="text-purple-500">*</span>
-              </h2>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              {(Object.keys(AGE_GROUP_LABELS) as AgeGroup[]).map((age) => (
-                <motion.button
-                  key={age}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={() => handleAgeSelect(age)}
-                  className={`p-4 rounded-xl border-2 transition-all ${
-                    settings.babyAge === age
-                      ? 'border-purple-500 bg-purple-50 text-purple-600 shadow-md'
-                      : 'border-gray-200 bg-white text-gray-600 hover:border-purple-300'
-                  }`}
-                >
-                  <div className="text-lg font-medium">{AGE_GROUP_LABELS[age]}</div>
-                  <div className="text-xs text-gray-400 mt-0.5">{AGE_GROUP_SUBTITLES[age]}</div>
-                </motion.button>
-              ))}
-            </div>
-          </Card>
-        </motion.div>
-
-        {/* 宝宝姓名（仅设置模式） */}
-        {isSettingsMode && (
+        {/* 首次进入：创建宝宝档案 */}
+        {isOnboarding && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.15 }}
-            className="mb-6"
-          >
-            <Card hoverable={false} className="p-6">
-              <div className="flex items-center gap-2 mb-4">
-                <User className="w-5 h-5 text-purple-500" />
-                <h2 className="text-lg font-semibold text-gray-800">
-                  宝宝姓名 <span className="text-gray-400 text-sm">(可选)</span>
-                </h2>
-                {babyName && (
-                  <span className="text-xs text-gray-400">{babyName.length}/8</span>
-                )}
-              </div>
-              <input
-                type="text"
-                value={babyName}
-                onChange={(e) => setBabyName(e.target.value)}
-                placeholder="输入宝宝的名字或小名"
-                maxLength={8}
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none text-gray-700 text-lg transition-colors"
-              />
-            </Card>
-          </motion.div>
-        )}
-
-        {/* 过敏食物选择 */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="mb-6"
-        >
-          <Card hoverable={false} className="p-6">
-            <FoodSelector
-              title="过敏食物"
-              icon={<AlertTriangle className="w-5 h-5 text-orange-500" />}
-              presetItems={COMMON_ALLERGIES}
-              selected={settings.allergies}
-              onToggle={handleAllergyToggle}
-              onAdd={handleAllergyToggle}
-              variant="warning"
-            />
-          </Card>
-        </motion.div>
-
-        {/* 不喜欢的食物（仅设置模式，6-8月龄不显示） */}
-        {isSettingsMode && settings.babyAge !== '6-8m' && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 }}
-            className="mb-6"
-          >
-            <Card hoverable={false} className="p-6">
-              <FoodSelector
-                title="不喜欢的食物"
-                icon={<ThumbsDown className="w-5 h-5 text-gray-500" />}
-                presetItems={COMMON_FOODS}
-                selected={settings.dislikes}
-                onToggle={handleDislikeToggle}
-                onAdd={handleDislikeToggle}
-                variant="default"
-              />
-            </Card>
-          </motion.div>
-        )}
-
-        {/* 喜欢的食物（仅设置模式，6-8月龄不显示） */}
-        {isSettingsMode && settings.babyAge !== '6-8m' && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4 }}
             className="mb-8"
           >
             <Card hoverable={false} className="p-6">
-              <FoodSelector
-                title="喜欢的食物"
-                icon={<Heart className="w-5 h-5 text-purple-500" />}
-                presetItems={COMMON_FOODS}
-                selected={settings.likes}
-                onToggle={handleLikeToggle}
-                onAdd={handleLikeToggle}
-                variant="success"
-              />
+              {/* 出生日期（必填） */}
+              <div className="mb-5">
+                <div className="flex items-center gap-2 mb-3">
+                  <Calendar className="w-5 h-5 text-purple-500" />
+                  <h2 className="text-lg font-semibold text-gray-800">
+                    宝宝出生日期 <span className="text-purple-500">*</span>
+                  </h2>
+                </div>
+                <input
+                  type="date"
+                  value={birthDate}
+                  onChange={(e) => setBirthDate(e.target.value)}
+                  max={today}
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none text-gray-700 text-lg transition-colors"
+                />
+              </div>
+
+              {/* 昵称（可选） */}
+              <div className="mb-5">
+                <div className="flex items-center gap-2 mb-3">
+                  <User className="w-5 h-5 text-purple-500" />
+                  <h2 className="text-lg font-semibold text-gray-800">
+                    宝宝昵称 <span className="text-gray-400 text-sm font-normal">(可选)</span>
+                  </h2>
+                  {nickname && (
+                    <span className="text-xs text-gray-400">{nickname.length}/8</span>
+                  )}
+                </div>
+                <input
+                  type="text"
+                  value={nickname}
+                  onChange={(e) => setNickname(e.target.value.slice(0, 8))}
+                  placeholder="输入宝宝的名字或小名"
+                  maxLength={8}
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none text-gray-700 text-lg transition-colors"
+                />
+              </div>
+
+              {/* 预览 */}
+              {birthDate && (() => {
+                try {
+                  const preview = calcAge(birthDate);
+                  const previewStage = GROWTH_STAGE_INFO[preview.growthStage];
+                  return (
+                    <div className="p-4 bg-purple-50 rounded-xl mb-2">
+                      <div className="text-sm text-purple-700 font-medium mb-1">当前阶段</div>
+                      <div className="flex items-center gap-2 text-sm text-purple-600">
+                        <span>{previewStage.emoji}</span>
+                        <span>{previewStage.label}</span>
+                        <span className="text-purple-400">·</span>
+                        <span>{preview.displayText}</span>
+                      </div>
+                      <div className="text-xs text-purple-400 mt-1">{previewStage.description}</div>
+                    </div>
+                  );
+                } catch {
+                  return null;
+                }
+              })()}
             </Card>
+
+            <div className="text-center mt-6">
+              <Button
+                onClick={handleCreateBaby}
+                disabled={!birthDate}
+                size="lg"
+                className="px-12"
+              >
+                ✨ 开始使用
+              </Button>
+            </div>
           </motion.div>
         )}
 
-        {/* 生成按钮 */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.5 }}
-          className="text-center"
-        >
-          <Button
-            onClick={handleGenerate}
-            disabled={!settings.babyAge}
-            size="lg"
-            className="px-12"
-          >
-            {isSettingsMode ? '✨ 重新生成食谱' : '✨ 开始推荐'}
-          </Button>
-          {!settings.babyAge && (
-            <p className="text-sm text-gray-500 mt-2">请先选择宝宝年龄</p>
-          )}
-        </motion.div>
+        {/* 已有宝宝：显示设置 */}
+        {!isOnboarding && (
+          <>
+            {/* 当前宝宝信息 */}
+            {currentBaby && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mb-6"
+              >
+                <BabyProfileCard
+                  baby={currentBaby}
+                  onClick={() => navigate('/baby-profile')}
+                />
+                <div className="text-center mt-2">
+                  <button
+                    onClick={() => navigate('/baby-profile')}
+                    className="text-sm text-purple-500 hover:text-purple-600 transition-colors"
+                  >
+                    管理宝宝档案 →
+                  </button>
+                </div>
+              </motion.div>
+            )}
+
+            {/* 过敏食物选择 */}
+            {!isInfantFeeding && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 }}
+              className="mb-6"
+            >
+              <Card hoverable={false} className="p-6">
+                <FoodSelector
+                  title="过敏食物"
+                  icon={<AlertTriangle className="w-5 h-5 text-orange-500" />}
+                  presetItems={COMMON_ALLERGIES}
+                  selected={settings.allergies}
+                  onToggle={handleAllergyToggle}
+                  onAdd={handleAllergyToggle}
+                  variant="warning"
+                />
+              </Card>
+            </motion.div>
+            )}
+
+            {/* 不喜欢的食物 */}
+            {settings.babyAge && settings.babyAge !== '6-8m' && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.2 }}
+                className="mb-6"
+              >
+                <Card hoverable={false} className="p-6">
+                  <FoodSelector
+                    title="不喜欢的食物"
+                    icon={<ThumbsDown className="w-5 h-5 text-gray-500" />}
+                    presetItems={COMMON_FOODS}
+                    selected={settings.dislikes}
+                    onToggle={handleDislikeToggle}
+                    onAdd={handleDislikeToggle}
+                    variant="default"
+                  />
+                </Card>
+              </motion.div>
+            )}
+
+            {/* 喜欢的食物 */}
+            {settings.babyAge && settings.babyAge !== '6-8m' && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 }}
+                className="mb-8"
+              >
+                <Card hoverable={false} className="p-6">
+                  <FoodSelector
+                    title="喜欢的食物"
+                    icon={<Heart className="w-5 h-5 text-purple-500" />}
+                    presetItems={COMMON_FOODS}
+                    selected={settings.likes}
+                    onToggle={handleLikeToggle}
+                    onAdd={handleLikeToggle}
+                    variant="success"
+                  />
+                </Card>
+              </motion.div>
+            )}
+
+            {/* 生成按钮 */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.4 }}
+              className="text-center"
+            >
+              <Button
+                onClick={handleGenerate}
+                size="lg"
+                className="px-12"
+              >
+                {isInfantFeeding
+                  ? '🍼 进入'
+                  : isSetupComplete
+                  ? '✨ 重新生成食谱'
+                  : '✨ 生成食谱'}
+              </Button>
+            </motion.div>
+          </>
+        )}
       </div>
     </div>
   );

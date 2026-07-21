@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { UserSettings, WeeklyPlan, Recipe, DayOfWeek, MealType, MealPlan, FoodRecord } from '../types';
+import { UserSettings, WeeklyPlan, Recipe, DayOfWeek, MealType, MealPlan, FoodRecord, BabyProfile, AgeGroup } from '../types';
 import { generateWeeklyPlan, regenerateMeal, regenerateDish, swapMeals } from '../utils/recipeGenerator';
+import { calcAge, generateBabyId, estimateBirthDateFromAgeGroup } from '../utils/babyProfile';
 
 interface AppState {
   // 用户设置
@@ -14,12 +15,18 @@ interface AppState {
   customRecipes: Recipe[];
   // 收藏的菜谱ID
   favoriteIds: string[];
-  // 宝宝姓名
+  // 宝宝姓名（兼容旧版，新架构中存储在 BabyProfile.nickname 中）
   babyName: string;
   // 食材添加记录（6-8月龄）
   foodRecords: FoodRecord[];
   // 当前辅食月龄 6/7/8
   feedingMonth: 6 | 7 | 8;
+
+  // ===== 宝宝成长档案 =====
+  // 宝宝列表
+  babies: BabyProfile[];
+  // 当前选中的宝宝ID
+  currentBabyId: string | null;
 
   // 操作方法
   setBabyAge: (age: UserSettings['babyAge']) => void;
@@ -43,6 +50,12 @@ interface AppState {
   updateFoodRecord: (name: string, updates: Partial<FoodRecord>) => void;
   removeFoodRecord: (name: string) => void;
   setFeedingMonth: (month: 6 | 7 | 8) => void;
+
+  // ===== 宝宝档案操作 =====
+  addBaby: (birthDate: string, nickname?: string) => string;
+  updateBaby: (id: string, updates: Partial<BabyProfile>) => void;
+  removeBaby: (id: string) => void;
+  setCurrentBaby: (id: string) => void;
 }
 
 const defaultSettings: UserSettings = {
@@ -51,6 +64,18 @@ const defaultSettings: UserSettings = {
   dislikes: [],
   likes: [],
 };
+
+// 获取当前有效的 AgeGroup（优先从 baby 档案计算，回退到 settings）
+function getEffectiveBabyAge(state: { babies: BabyProfile[]; currentBabyId: string | null; settings: UserSettings }): AgeGroup | null {
+  if (state.currentBabyId) {
+    const baby = state.babies.find(b => b.id === state.currentBabyId);
+    if (baby) {
+      const ageInfo = calcAge(baby.birthDate);
+      return ageInfo.ageGroup;
+    }
+  }
+  return state.settings.babyAge;
+}
 
 export const useStore = create<AppState>()(
   persist(
@@ -63,6 +88,8 @@ export const useStore = create<AppState>()(
       babyName: '',
       foodRecords: [],
       feedingMonth: 6,
+      babies: [],
+      currentBabyId: null,
 
       setBabyAge: (age) => set((state) => ({
         settings: { ...state.settings, babyAge: age },
@@ -83,33 +110,46 @@ export const useStore = create<AppState>()(
       setBabyName: (name) => set({ babyName: name }),
 
       generatePlan: () => {
-        const { settings, customRecipes } = get();
-        if (!settings.babyAge) return;
+        const state = get();
+        const effectiveAge = getEffectiveBabyAge(state);
+        if (!effectiveAge) return;
 
-        const plan = generateWeeklyPlan(settings, customRecipes);
-        set({ weeklyPlan: plan, isSetupComplete: true });
+        const plan = generateWeeklyPlan(
+          { ...state.settings, babyAge: effectiveAge },
+          state.customRecipes
+        );
+        // 同步 settings.babyAge
+        set({
+          weeklyPlan: plan,
+          isSetupComplete: true,
+          settings: { ...state.settings, babyAge: effectiveAge },
+        });
       },
 
       regenerateMeal: (day, mealType) => {
-        const { weeklyPlan, settings, customRecipes } = get();
-        if (!weeklyPlan || !settings.babyAge) return;
+        const state = get();
+        const effectiveAge = getEffectiveBabyAge(state);
+        if (!state.weeklyPlan || !effectiveAge) return;
 
-        // 收集所有已使用的食谱
         const usedRecipes: Recipe[] = [];
-        for (const d of Object.keys(weeklyPlan) as DayOfWeek[]) {
-          usedRecipes.push(...weeklyPlan[d].breakfast.dishes);
-          usedRecipes.push(...weeklyPlan[d].lunch.dishes);
-          usedRecipes.push(...weeklyPlan[d].dinner.dishes);
+        for (const d of Object.keys(state.weeklyPlan) as DayOfWeek[]) {
+          usedRecipes.push(...state.weeklyPlan[d].breakfast.dishes);
+          usedRecipes.push(...state.weeklyPlan[d].lunch.dishes);
+          usedRecipes.push(...state.weeklyPlan[d].dinner.dishes);
         }
 
-        // 重新生成
-        const newMeal = regenerateMeal(settings, customRecipes, usedRecipes, mealType);
+        const newMeal = regenerateMeal(
+          { ...state.settings, babyAge: effectiveAge },
+          state.customRecipes,
+          usedRecipes,
+          mealType
+        );
 
-        set((state) => ({
+        set((s) => ({
           weeklyPlan: {
-            ...state.weeklyPlan!,
+            ...s.weeklyPlan!,
             [day]: {
-              ...state.weeklyPlan![day],
+              ...s.weeklyPlan![day],
               [mealType]: newMeal,
             },
           },
@@ -117,19 +157,19 @@ export const useStore = create<AppState>()(
       },
 
       regenerateDish: (day, mealType, dishIndex) => {
-        const { weeklyPlan, settings, customRecipes } = get();
-        if (!weeklyPlan || !settings.babyAge) return;
+        const state = get();
+        const effectiveAge = getEffectiveBabyAge(state);
+        if (!state.weeklyPlan || !effectiveAge) return;
 
-        const dayPlan = weeklyPlan[day];
+        const dayPlan = state.weeklyPlan[day];
         const mealPlan = dayPlan[mealType];
         const targetDish = mealPlan.dishes[dishIndex];
         if (!targetDish) return;
 
-        // 收集整周已使用的食谱（排除当前要替换的）
         const usedRecipes: Recipe[] = [];
-        for (const d of Object.keys(weeklyPlan) as DayOfWeek[]) {
+        for (const d of Object.keys(state.weeklyPlan) as DayOfWeek[]) {
           for (const m of ['breakfast', 'lunch', 'dinner'] as MealType[]) {
-            weeklyPlan[d][m].dishes.forEach((dish, idx) => {
+            state.weeklyPlan[d][m].dishes.forEach((dish, idx) => {
               if (!(d === day && m === mealType && idx === dishIndex)) {
                 usedRecipes.push(dish);
               }
@@ -137,19 +177,24 @@ export const useStore = create<AppState>()(
           }
         }
 
-        const newDish = regenerateDish(settings, customRecipes, usedRecipes, targetDish.dishType);
+        const newDish = regenerateDish(
+          { ...state.settings, babyAge: effectiveAge },
+          state.customRecipes,
+          usedRecipes,
+          targetDish.dishType
+        );
         if (!newDish) return;
 
         const newDishes = [...mealPlan.dishes];
         newDishes[dishIndex] = newDish;
 
-        set((state) => ({
+        set((s) => ({
           weeklyPlan: {
-            ...state.weeklyPlan!,
+            ...s.weeklyPlan!,
             [day]: {
-              ...state.weeklyPlan![day],
+              ...s.weeklyPlan![day],
               [mealType]: {
-                ...state.weeklyPlan![day][mealType],
+                ...s.weeklyPlan![day][mealType],
                 dishes: newDishes,
               },
             },
@@ -274,11 +319,67 @@ export const useStore = create<AppState>()(
         babyName: '',
         foodRecords: [],
         feedingMonth: 6,
+        babies: [],
+        currentBabyId: null,
       }),
+
+      // ===== 宝宝档案操作 =====
+
+      addBaby: (birthDate, nickname) => {
+        const id = generateBabyId();
+        const baby: BabyProfile = { id, birthDate, ...(nickname ? { nickname } : {}) };
+        set((state) => ({
+          babies: [...state.babies, baby],
+          currentBabyId: state.currentBabyId || id,
+        }));
+        return id;
+      },
+
+      updateBaby: (id, updates) => set((state) => ({
+        babies: state.babies.map(b =>
+          b.id === id ? { ...b, ...updates } : b
+        ),
+      })),
+
+      removeBaby: (id) => set((state) => {
+        const newBabies = state.babies.filter(b => b.id !== id);
+        const newCurrentId = state.currentBabyId === id
+          ? (newBabies.length > 0 ? newBabies[0].id : null)
+          : state.currentBabyId;
+        // 如果没有宝宝了，清空相关数据
+        if (newBabies.length === 0) {
+          return {
+            babies: [],
+            currentBabyId: null,
+            settings: defaultSettings,
+            weeklyPlan: null,
+            isSetupComplete: false,
+            babyName: '',
+          };
+        }
+        return { babies: newBabies, currentBabyId: newCurrentId };
+      }),
+
+      setCurrentBaby: (id) => {
+        const state = get();
+        const baby = state.babies.find(b => b.id === id);
+        if (!baby) return;
+
+        // 切换宝宝时重新计算年龄并清空旧食谱
+        const ageInfo = calcAge(baby.birthDate);
+        set({
+          currentBabyId: id,
+          weeklyPlan: null,
+          settings: {
+            ...state.settings,
+            babyAge: ageInfo.ageGroup,
+          },
+        });
+      },
     }),
     {
       name: 'baby-recipe-storage',
-      version: 36,
+      version: 37,
       migrate: (persistedState: any, version: number) => {
         if (version < 30) {
           return {
@@ -323,6 +424,27 @@ export const useStore = create<AppState>()(
             ...persistedState,
             foodRecords: persistedState?.foodRecords || [],
             feedingMonth: persistedState?.feedingMonth || 6,
+          };
+        }
+        // v37: 新增宝宝成长档案（babies、currentBabyId）
+        // 迁移已有用户：如果已有 babyAge 设置，自动生成一个宝宝档案
+        if (version < 37) {
+          const babies: BabyProfile[] = persistedState?.babies || [];
+          let currentBabyId: string | null = persistedState?.currentBabyId || null;
+
+          // 如果有旧数据但没有宝宝档案，自动创建
+          if (babies.length === 0 && persistedState?.settings?.babyAge) {
+            const birthDate = estimateBirthDateFromAgeGroup(persistedState.settings.babyAge);
+            const id = generateBabyId();
+            const nickname = persistedState?.babyName || undefined;
+            babies.push({ id, birthDate, ...(nickname ? { nickname } : {}) });
+            currentBabyId = id;
+          }
+
+          return {
+            ...persistedState,
+            babies,
+            currentBabyId,
           };
         }
         return persistedState;

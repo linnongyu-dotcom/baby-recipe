@@ -1,14 +1,17 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useState, useEffect, useMemo } from 'react';
-import { Settings, Download, ChevronDown, Loader2, Share2, Check } from 'lucide-react';
+import { Settings, Download, ChevronDown, Loader2, Share2, Check, User } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { Button } from '@/components/common/Button';
 import { Modal } from '@/components/common/Modal';
 import { RecipeCard } from '@/components/recipe/RecipeCard';
 import { ComplementaryFeedingPlan } from '@/components/recipe/ComplementaryFeedingPlan';
 import { FoodTracker } from '@/components/recipe/FoodTracker';
-import { DAYS_OF_WEEK, DAY_LABELS, DayOfWeek, AGE_GROUP_LABELS, AgeGroup, WeeklyPlan, getAgeStage, NUTRITION_CHECK_TITLES, FoodRecord } from '@/types';
+import { BabySelector } from '@/components/baby/BabySelector';
+import { MilkKnowledge } from '@/components/baby/MilkKnowledge';
+import { DAYS_OF_WEEK, DAY_LABELS, DayOfWeek, AGE_GROUP_LABELS, AgeGroup, WeeklyPlan, FoodRecord } from '@/types';
+import { calcAge, getMealLabels, getMealIcons } from '@/utils/babyProfile';
 import { downloadRecipePDF } from '@/utils/pdfGenerator';
 import { encodeShareData, decodeShareData } from '@/utils/shareUtils';
 import { analyzeDayNutrition, analyzeWeekNutrition, generateSnacks } from '@/utils/nutritionEngine';
@@ -111,7 +114,7 @@ export function RecipePage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const store = useStore();
-  const { weeklyPlan, settings, babyName, regenerateMeal, regenerateDish, removeDish, swapMeals, setCustomMeal, addDish,
+  const { weeklyPlan, settings, babyName, babies, currentBabyId, regenerateMeal, regenerateDish, removeDish, swapMeals, setCustomMeal, addDish,
     foodRecords, feedingMonth, addFoodRecord, setFeedingMonth } = store;
 
   const shareParam = searchParams.get('share');
@@ -122,12 +125,25 @@ export function RecipePage() {
   const [showWeeklyPlan, setShowWeeklyPlan] = useState(false);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
 
+  // 从宝宝档案计算年龄
+  const currentBaby = babies.find(b => b.id === currentBabyId);
+  const babyAgeInfo = currentBaby ? calcAge(currentBaby.birthDate) : null;
+  const effectiveAgeGroup = babyAgeInfo?.ageGroup ?? settings.babyAge;
+  const isInfantFeeding = babyAgeInfo?.growthStage === 'infant_feeding'; // 0-5月
+  const isUnderOneYear = babyAgeInfo?.isUnderOneYear ?? true;
+  const mealLabels = getMealLabels(isUnderOneYear);
+  const mealIcons = getMealIcons(isUnderOneYear);
+
+  // 阶段标识
+  const is6to8m = effectiveAgeGroup === '6-8m';
+  const is9to11m = effectiveAgeGroup === '9-11m';
+  const isTwoMeal = is6to8m || is9to11m;
+
   useEffect(() => {
     if (shareParam) {
       const decoded = decodeShareData(shareParam);
       if (decoded) {
         setSharedData(decoded);
-        // 分享模式下用传入的年龄做营养分析
         if (decoded.ageGroup) {
           store.setBabyAge(decoded.ageGroup);
         }
@@ -138,13 +154,20 @@ export function RecipePage() {
   const isShareMode = !!sharedData;
 
   useEffect(() => {
-    setPageTitle(isShareMode ? '分享食谱' : (babyName ? `${babyName}的食谱` : '今日食谱'));
-  }, [babyName, isShareMode]);
+    if (isShareMode) {
+      setPageTitle('分享食谱');
+    } else if (currentBaby) {
+      const name = currentBaby.nickname || '宝宝';
+      setPageTitle(`${name}的食谱`);
+    } else if (babyName) {
+      setPageTitle(`${babyName}的食谱`);
+    } else {
+      setPageTitle('今日食谱');
+    }
+  }, [currentBaby, babyName, isShareMode]);
+
   const displayPlan = sharedData?.weeklyPlan || weeklyPlan;
-  const displayAgeLabel = sharedData?.ageLabel || (settings.babyAge ? AGE_GROUP_LABELS[settings.babyAge] : '');
-  const is6to8m = settings.babyAge === '6-8m';
-  const is9to11m = settings.babyAge === '9-11m';
-  const isTwoMeal = is6to8m || is9to11m; // 6-8m 和 9-11m 均为两餐模式
+  const displayAgeLabel = sharedData?.ageLabel || (effectiveAgeGroup ? AGE_GROUP_LABELS[effectiveAgeGroup] : '');
 
   const todayDay = useMemo((): DayOfWeek => {
     const jsDay = new Date().getDay();
@@ -156,29 +179,37 @@ export function RecipePage() {
   }, []);
 
   const todayNutrition = useMemo(() => {
-    if (!displayPlan || !settings.babyAge) return null;
-    return analyzeDayNutrition(displayPlan[todayDay], settings.babyAge);
-  }, [displayPlan, todayDay, settings.babyAge]);
+    if (!displayPlan || !effectiveAgeGroup) return null;
+    return analyzeDayNutrition(displayPlan[todayDay], effectiveAgeGroup);
+  }, [displayPlan, todayDay, effectiveAgeGroup]);
 
   const snackSuggestions = useMemo(() => {
-    if (!settings.babyAge) return null;
-    return generateSnacks(settings.babyAge).items;
-  }, [settings.babyAge]);
+    if (!effectiveAgeGroup) return null;
+    return generateSnacks(effectiveAgeGroup).items;
+  }, [effectiveAgeGroup]);
 
   const weekNutrition = useMemo(() => {
-    if (!displayPlan || !settings.babyAge) return null;
-    return analyzeWeekNutrition(displayPlan, settings.babyAge);
-  }, [displayPlan, settings.babyAge]);
+    if (!displayPlan || !effectiveAgeGroup) return null;
+    return analyzeWeekNutrition(displayPlan, effectiveAgeGroup);
+  }, [displayPlan, effectiveAgeGroup]);
 
-  if (!weeklyPlan && !isShareMode) {
-    navigate('/setup');
-    return null;
+  // 无宝宝时跳转到创建页
+  if (!weeklyPlan && !isShareMode && !isInfantFeeding) {
+    if (babies.length === 0) {
+      navigate('/setup');
+      return null;
+    }
+    // 有宝宝但没有食谱，跳转到设置页生成
+    if (effectiveAgeGroup) {
+      navigate('/setup');
+      return null;
+    }
   }
 
   const handleShare = async () => {
     if (!weeklyPlan) return;
-    const ageLabel = settings.babyAge ? AGE_GROUP_LABELS[settings.babyAge] : '宝宝';
-    const encoded = encodeShareData(weeklyPlan, ageLabel, settings.babyAge!);
+    const ageLabel = effectiveAgeGroup ? AGE_GROUP_LABELS[effectiveAgeGroup] : '宝宝';
+    const encoded = encodeShareData(weeklyPlan, ageLabel, effectiveAgeGroup!);
     const url = `${window.location.origin}/recipe?share=${encoded}`;
     try {
       await navigator.clipboard.writeText(url);
@@ -194,7 +225,7 @@ export function RecipePage() {
     setShowDownloadModal(false);
     setDownloading(true);
     try {
-      await downloadRecipePDF(displayPlan, settings.babyAge, targetDay);
+      await downloadRecipePDF(displayPlan, effectiveAgeGroup, targetDay);
     } catch (e) {
       console.error('PDF生成失败', e);
       alert('PDF生成失败，请重试');
@@ -210,9 +241,8 @@ export function RecipePage() {
     addFoodRecord(record);
   };
 
-  const nutritionGuide = settings.babyAge ? getNutritionGuide(settings.babyAge) : null;
+  const nutritionGuide = effectiveAgeGroup ? getNutritionGuide(effectiveAgeGroup) : null;
 
-  // 计算一天营养统计
   const getDayNutritionSummary = (day: DayOfWeek) => {
     const dayPlan = displayPlan[day];
     if (!dayPlan || !dayPlan.breakfast || !dayPlan.lunch || !dayPlan.dinner) {
@@ -224,6 +254,14 @@ export function RecipePage() {
       ...(dayPlan.dinner.dishes || []),
     ];
     return `${allDishes.length}道菜`;
+  };
+
+  // 统一的餐次标题和图标（用于 RecipeCard）
+  const getMealTitle = (mealType: 'breakfast' | 'lunch' | 'dinner') => {
+    return isUnderOneYear ? mealLabels[mealType] : undefined;
+  };
+  const getMealEmoji = (mealType: 'breakfast' | 'lunch' | 'dinner') => {
+    return isUnderOneYear ? mealIcons[mealType] : undefined;
   };
 
   return (
@@ -257,7 +295,11 @@ export function RecipePage() {
                 <span className="whitespace-nowrap">分享食谱</span>
               ) : (
                 <span className="whitespace-nowrap">
-                  {babyName ? `${babyName} 今天吃什么？` : '今天吃什么？'}
+                  {currentBaby
+                    ? `${currentBaby.nickname || '宝宝'} 今天吃什么？`
+                    : babyName
+                    ? `${babyName} 今天吃什么？`
+                    : '今天吃什么？'}
                 </span>
               )}
             </h1>
@@ -265,6 +307,8 @@ export function RecipePage() {
               <p className="text-gray-600 mt-1 text-xs sm:text-sm">
                 {displayAgeLabel} · 共 7 天 × 3 餐 = 21 餐
               </p>
+            ) : isInfantFeeding ? (
+              <p className="text-gray-600 mt-1 text-xs sm:text-sm">🍼 当前阶段：婴儿喂养期 · 专注奶量</p>
             ) : isTwoMeal ? (
               <p className="text-gray-600 mt-1 text-xs sm:text-sm">每日2餐辅食 · 逐步丰富食物种类</p>
             ) : (
@@ -273,19 +317,31 @@ export function RecipePage() {
           </div>
 
           <div className="flex gap-2 flex-shrink-0">
+            {/* 宝宝选择器 */}
+            {!isShareMode && currentBaby && (
+              <BabySelector onNavigateToProfile={() => navigate('/baby-profile')} />
+            )}
+            {!currentBaby && !isShareMode && babies.length > 0 && (
+              <Button onClick={() => navigate('/baby-profile')} variant="outline" size="sm">
+                <User className="w-4 h-4" />
+                选择宝宝
+              </Button>
+            )}
             {!isShareMode && (
               <>
                 <Button onClick={() => navigate('/setup')} variant="outline" size="sm">
                   <Settings className="w-4 h-4" />
                   设置
                 </Button>
-                <Button onClick={handleShare} variant="outline" size="sm">
-                  {shareCopied ? <Check className="w-4 h-4 text-green-500" /> : <Share2 className="w-4 h-4" />}
-                  {shareCopied ? '已复制' : '分享'}
-                </Button>
+                {!isInfantFeeding && (
+                  <Button onClick={handleShare} variant="outline" size="sm">
+                    {shareCopied ? <Check className="w-4 h-4 text-green-500" /> : <Share2 className="w-4 h-4" />}
+                    {shareCopied ? '已复制' : '分享'}
+                  </Button>
+                )}
               </>
             )}
-            {!is6to8m && (
+            {!is6to8m && !isInfantFeeding && (
             <Button onClick={() => setShowDownloadModal(true)} variant="secondary" size="sm" disabled={downloading}>
               {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
               {downloading ? '生成中…' : '下载'}
@@ -294,8 +350,13 @@ export function RecipePage() {
           </div>
         </motion.div>
 
-        {/* 营养科学指南 */}
-        {!isShareMode && nutritionGuide && (
+        {/* 0-5月龄：婴儿喂养期 */}
+        {!isShareMode && isInfantFeeding && (
+          <MilkKnowledge />
+        )}
+
+        {/* 营养科学指南（非婴儿喂养期）*/}
+        {!isShareMode && nutritionGuide && !isInfantFeeding && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -364,8 +425,8 @@ export function RecipePage() {
           </motion.div>
         )}
 
-        {/* 快捷说明（6-8月龄不显示，无食谱操作） */}
-        {!isShareMode && !is6to8m && (
+        {/* 快捷说明 */}
+        {!isShareMode && !is6to8m && !isInfantFeeding && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -380,14 +441,13 @@ export function RecipePage() {
         </motion.div>
         )}
 
-        {/* 6-8 月龄：辅食添加参考计划（替换每日菜单） */}
-        {is6to8m && (
+        {/* 6-8 月龄：辅食添加参考计划 */}
+        {is6to8m && !isInfantFeeding && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             className="mb-6 bg-white rounded-2xl shadow-lg p-6"
           >
-            {/* 月份选择 */}
             <div className="flex items-center gap-2 mb-6">
               <span className="text-2xl">📋</span>
               <h2 className="text-xl font-semibold text-gray-800">辅食添加计划参考</h2>
@@ -412,7 +472,7 @@ export function RecipePage() {
         )}
 
         {/* 宝宝添加记录（6-8 月龄） */}
-         {is6to8m && (
+         {is6to8m && !isInfantFeeding && (
            <FoodTracker
              babyMonth={feedingMonth}
              foodRecords={foodRecords}
@@ -420,8 +480,8 @@ export function RecipePage() {
            />
          )}
 
-        {/* 今日推荐（9-11m 及以上） */}
-        {displayPlan && !is6to8m && (
+        {/* 今日推荐（非 6-8m 且非婴儿喂养期） */}
+        {displayPlan && !is6to8m && !isInfantFeeding && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -433,13 +493,13 @@ export function RecipePage() {
               <span className="text-sm text-gray-500">{DAY_LABELS[todayDay]}</span>
             </div>
             {isTwoMeal ? (
-              /* 6-8m / 9-11m：两餐布局 */
+              /* 两餐布局 */
               <div className="grid md:grid-cols-2 gap-4">
                 <RecipeCard
                   mealPlan={displayPlan[todayDay].breakfast}
                   mealType="breakfast"
-                  mealTitle={is6to8m ? '第一餐辅食' : undefined}
-                  mealEmoji={is6to8m ? '🥣' : undefined}
+                  mealTitle={getMealTitle('breakfast')}
+                  mealEmoji={getMealEmoji('breakfast')}
                   onRefresh={() => regenerateMeal(todayDay, 'breakfast')}
                   onReplaceDish={(idx) => regenerateDish(todayDay, 'breakfast', idx)}
                   onRemoveDish={(idx) => removeDish(todayDay, 'breakfast', idx)}
@@ -453,8 +513,8 @@ export function RecipePage() {
                   <RecipeCard
                     mealPlan={displayPlan[todayDay].lunch}
                     mealType="lunch"
-                    mealTitle={is6to8m ? '第二餐辅食' : undefined}
-                    mealEmoji={is6to8m ? '🥄' : undefined}
+                    mealTitle={getMealTitle('lunch')}
+                    mealEmoji={getMealEmoji('lunch')}
                     onRefresh={() => regenerateMeal(todayDay, 'lunch')}
                     onReplaceDish={(idx) => regenerateDish(todayDay, 'lunch', idx)}
                     onRemoveDish={(idx) => removeDish(todayDay, 'lunch', idx)}
@@ -467,11 +527,13 @@ export function RecipePage() {
                 )}
               </div>
             ) : (
-              /* 9-11m 及以上：三餐布局 */
+              /* 三餐布局 */
               <div className="grid md:grid-cols-3 gap-4">
                 <RecipeCard
                   mealPlan={displayPlan[todayDay].breakfast}
                   mealType="breakfast"
+                  mealTitle={getMealTitle('breakfast')}
+                  mealEmoji={getMealEmoji('breakfast')}
                   onRefresh={() => regenerateMeal(todayDay, 'breakfast')}
                   onReplaceDish={(idx) => regenerateDish(todayDay, 'breakfast', idx)}
                   onRemoveDish={(idx) => removeDish(todayDay, 'breakfast', idx)}
@@ -485,6 +547,8 @@ export function RecipePage() {
                   <RecipeCard
                     mealPlan={displayPlan[todayDay].lunch}
                     mealType="lunch"
+                    mealTitle={getMealTitle('lunch')}
+                    mealEmoji={getMealEmoji('lunch')}
                     onRefresh={() => regenerateMeal(todayDay, 'lunch')}
                     onReplaceDish={(idx) => regenerateDish(todayDay, 'lunch', idx)}
                     onRemoveDish={(idx) => removeDish(todayDay, 'lunch', idx)}
@@ -500,6 +564,8 @@ export function RecipePage() {
                   <RecipeCard
                     mealPlan={displayPlan[todayDay].dinner}
                     mealType="dinner"
+                    mealTitle={getMealTitle('dinner')}
+                    mealEmoji={getMealEmoji('dinner')}
                     onRefresh={() => regenerateMeal(todayDay, 'dinner')}
                     onReplaceDish={(idx) => regenerateDish(todayDay, 'dinner', idx)}
                     onRemoveDish={(idx) => removeDish(todayDay, 'dinner', idx)}
@@ -516,8 +582,8 @@ export function RecipePage() {
           </motion.div>
         )}
 
-        {/* 加餐建议（6-8 月龄不显示） */}
-        {displayPlan && snackSuggestions && snackSuggestions.length > 0 && !isTwoMeal && (
+        {/* 加餐建议 */}
+        {displayPlan && snackSuggestions && snackSuggestions.length > 0 && !isTwoMeal && !isInfantFeeding && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -544,8 +610,8 @@ export function RecipePage() {
           </motion.div>
         )}
 
-        {/* 今日营养检查（6-8月龄不显示，已有参考计划） */}
-        {displayPlan && todayNutrition && !is6to8m && (
+        {/* 今日营养检查 */}
+        {displayPlan && todayNutrition && !is6to8m && !isInfantFeeding && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -565,7 +631,6 @@ export function RecipePage() {
               </h2>
             </div>
 
-            {/* 6-8 月辅食成长提示 */}
             {todayNutrition.checkType === 'growth' && (
               <p className="text-sm text-purple-600 mb-4 bg-purple-50 rounded-lg px-4 py-2">
                 6-8个月宝宝仍以奶为主要营养来源，辅食重点是逐步尝试和建立饮食习惯。
@@ -618,8 +683,8 @@ export function RecipePage() {
           </motion.div>
         )}
 
-        {/* 本周推荐 折叠（6-8 月龄不显示） */}
-        {displayPlan && !is6to8m && (
+        {/* 本周推荐 */}
+        {displayPlan && !is6to8m && !isInfantFeeding && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -677,13 +742,12 @@ export function RecipePage() {
                             </h2>
                           </div>
                           {isTwoMeal ? (
-                            /* 6-8m / 9-11m：两餐布局 */
                             <div className="grid md:grid-cols-2 gap-4">
                               <RecipeCard
                                 mealPlan={dayPlan.breakfast}
                                 mealType="breakfast"
-                                mealTitle={is6to8m ? '第一餐辅食' : undefined}
-                                mealEmoji={is6to8m ? '🥣' : undefined}
+                                mealTitle={getMealTitle('breakfast')}
+                                mealEmoji={getMealEmoji('breakfast')}
                                 onRefresh={() => regenerateMeal(day, 'breakfast')}
                                 onReplaceDish={(idx) => regenerateDish(day, 'breakfast', idx)}
                                 onRemoveDish={(idx) => removeDish(day, 'breakfast', idx)}
@@ -697,8 +761,8 @@ export function RecipePage() {
                                 <RecipeCard
                                   mealPlan={dayPlan.lunch}
                                   mealType="lunch"
-                                  mealTitle={is6to8m ? '第二餐辅食' : undefined}
-                                  mealEmoji={is6to8m ? '🥄' : undefined}
+                                  mealTitle={getMealTitle('lunch')}
+                                  mealEmoji={getMealEmoji('lunch')}
                                   onRefresh={() => regenerateMeal(day, 'lunch')}
                                   onReplaceDish={(idx) => regenerateDish(day, 'lunch', idx)}
                                   onRemoveDish={(idx) => removeDish(day, 'lunch', idx)}
@@ -715,6 +779,8 @@ export function RecipePage() {
                             <RecipeCard
                               mealPlan={dayPlan.breakfast}
                               mealType="breakfast"
+                              mealTitle={getMealTitle('breakfast')}
+                              mealEmoji={getMealEmoji('breakfast')}
                               onRefresh={() => regenerateMeal(day, 'breakfast')}
                               onReplaceDish={(idx) => regenerateDish(day, 'breakfast', idx)}
                               onRemoveDish={(idx) => removeDish(day, 'breakfast', idx)}
@@ -728,6 +794,8 @@ export function RecipePage() {
                               <RecipeCard
                                 mealPlan={dayPlan.lunch}
                                 mealType="lunch"
+                                mealTitle={getMealTitle('lunch')}
+                                mealEmoji={getMealEmoji('lunch')}
                                 onRefresh={() => regenerateMeal(day, 'lunch')}
                                 onReplaceDish={(idx) => regenerateDish(day, 'lunch', idx)}
                                 onRemoveDish={(idx) => removeDish(day, 'lunch', idx)}
@@ -743,6 +811,8 @@ export function RecipePage() {
                               <RecipeCard
                                 mealPlan={dayPlan.dinner}
                                 mealType="dinner"
+                                mealTitle={getMealTitle('dinner')}
+                                mealEmoji={getMealEmoji('dinner')}
                                 onRefresh={() => regenerateMeal(day, 'dinner')}
                                 onReplaceDish={(idx) => regenerateDish(day, 'dinner', idx)}
                                 onRemoveDish={(idx) => removeDish(day, 'dinner', idx)}
