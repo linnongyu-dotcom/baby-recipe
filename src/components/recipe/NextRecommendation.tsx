@@ -76,10 +76,6 @@ export function NextRecommendation({ babyMonth, foodRecords, onAddFood }: NextRe
               </div>
             </div>
           </div>
-          <Button onClick={onAddFood} variant="primary" size="sm" className="w-full mt-3">
-            <Plus className="w-4 h-4" />
-            添加新食材
-          </Button>
         </motion.div>
       ) : tryingRecords.length > 0 ? (
         <div className="p-4 bg-blue-50 rounded-xl border border-blue-200">
@@ -98,10 +94,6 @@ export function NextRecommendation({ babyMonth, foodRecords, onAddFood }: NextRe
           <p className="text-sm text-gray-500">
             尚未开始添加辅食，从强化铁米粉开始吧
           </p>
-          <Button onClick={onAddFood} variant="primary" size="sm" className="w-full mt-3">
-            <Plus className="w-4 h-4" />
-            开始记录
-          </Button>
         </div>
       )}
 

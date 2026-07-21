@@ -8,7 +8,6 @@ import { Modal } from '@/components/common/Modal';
 import { RecipeCard } from '@/components/recipe/RecipeCard';
 import { ComplementaryFeedingPlan } from '@/components/recipe/ComplementaryFeedingPlan';
 import { FoodTracker } from '@/components/recipe/FoodTracker';
-import { NextRecommendation } from '@/components/recipe/NextRecommendation';
 import { DAYS_OF_WEEK, DAY_LABELS, DayOfWeek, AGE_GROUP_LABELS, AgeGroup, WeeklyPlan, getAgeStage, NUTRITION_CHECK_TITLES, FoodRecord } from '@/types';
 import { downloadRecipePDF } from '@/utils/pdfGenerator';
 import { encodeShareData, decodeShareData } from '@/utils/shareUtils';
@@ -122,7 +121,6 @@ export function RecipePage() {
   const [shareCopied, setShareCopied] = useState(false);
   const [showWeeklyPlan, setShowWeeklyPlan] = useState(false);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
-  const [triggerAddFood, setTriggerAddFood] = useState(false);
 
   useEffect(() => {
     if (shareParam) {
@@ -415,22 +413,11 @@ export function RecipePage() {
 
         {/* 宝宝添加记录（6-8 月龄） */}
          {is6to8m && (
-           <>
-             <FoodTracker
-               babyMonth={feedingMonth}
-               foodRecords={foodRecords}
-               onSaveFood={handleAddFood}
-               openAddModal={triggerAddFood}
-               onModalClosed={() => setTriggerAddFood(false)}
-             />
-             <div className="mt-4">
-               <NextRecommendation
-                 babyMonth={feedingMonth}
-                 foodRecords={foodRecords}
-                 onAddFood={() => setTriggerAddFood(prev => !prev)}
-               />
-             </div>
-           </>
+           <FoodTracker
+             babyMonth={feedingMonth}
+             foodRecords={foodRecords}
+             onSaveFood={handleAddFood}
+           />
          )}
 
         {/* 今日推荐（9-11m 及以上） */}

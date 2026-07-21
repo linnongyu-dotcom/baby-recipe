@@ -1,17 +1,14 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Plus, Edit3, Clock, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { FoodRecord, FoodIntroCategory, FoodStatus, FOOD_CATEGORY_INFO } from '../../types';
 import { getCategoryFoodsWithStatus } from '../../utils/foodIntroductionEngine';
-import { findFoodDef } from '../../data/foodIntroduction';
 import { AddFoodModal } from './AddFoodModal';
 
 interface FoodTrackerProps {
   babyMonth: number;
   foodRecords: FoodRecord[];
   onSaveFood: (record: FoodRecord) => void;
-  openAddModal?: boolean;
-  onModalClosed?: () => void;
 }
 
 const STATUS_STYLE: Record<FoodStatus, { bg: string; text: string; icon: string }> = {
@@ -21,18 +18,10 @@ const STATUS_STYLE: Record<FoodStatus, { bg: string; text: string; icon: string 
   unsuitable: { bg: 'bg-red-50', text: 'text-red-500', icon: '⚠️' },
 };
 
-export function FoodTracker({ babyMonth, foodRecords, onSaveFood, openAddModal, onModalClosed }: FoodTrackerProps) {
+export function FoodTracker({ babyMonth, foodRecords, onSaveFood }: FoodTrackerProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingFood, setEditingFood] = useState<FoodRecord | undefined>(undefined);
 
-  // 外部触发打开弹窗
-  useEffect(() => {
-    if (openAddModal) {
-      setIsModalOpen(true);
-    }
-  }, [openAddModal]);
-
-  // 按分类整理食材（含未尝试的）
   const categories = useMemo(() => {
     const cats: FoodIntroCategory[] = ['grain', 'vegetable', 'fruit', 'protein'];
     return cats.map(cat => ({
@@ -54,7 +43,6 @@ export function FoodTracker({ babyMonth, foodRecords, onSaveFood, openAddModal, 
   const handleClose = () => {
     setIsModalOpen(false);
     setEditingFood(undefined);
-    onModalClosed?.();
   };
 
   return (
@@ -63,7 +51,6 @@ export function FoodTracker({ babyMonth, foodRecords, onSaveFood, openAddModal, 
       animate={{ opacity: 1, y: 0 }}
       className="bg-white rounded-2xl shadow-lg p-5 sm:p-6"
     >
-      {/* 头部 */}
       <div className="flex items-center justify-between mb-1">
         <div className="flex items-center gap-2">
           <span className="text-2xl">🥣</span>
@@ -79,7 +66,6 @@ export function FoodTracker({ babyMonth, foodRecords, onSaveFood, openAddModal, 
       </div>
       <p className="text-xs text-gray-400 mb-5">记录宝宝尝试过的每一种食材，科学安排添加顺序</p>
 
-      {/* 按分类展示 */}
       <div className="space-y-5">
         {categories.map(({ category, foods }) => {
           if (foods.length === 0) return null;
