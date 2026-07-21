@@ -15,7 +15,7 @@ import { calcAge, getMealLabels, getMealIcons } from '@/utils/babyProfile';
 import { downloadRecipePDF } from '@/utils/pdfGenerator';
 import { encodeShareData, decodeShareData } from '@/utils/shareUtils';
 import { analyzeDayNutrition, analyzeWeekNutrition, generateSnacks } from '@/utils/nutritionEngine';
-import { BRAND, SHARE, BRAND_ASSETS, setPageTitle } from '@/config/brand';
+import { BRAND, BRAND_ASSETS, setPageTitle } from '@/config/brand';
 
 interface NutritionGuide {
   title: string;
@@ -429,11 +429,7 @@ export function RecipePage() {
               </p>
             ) : isInfantFeeding ? (
               <p className="text-gray-600 mt-1 text-xs sm:text-sm">🍼 当前阶段：婴儿喂养期 · 专注奶量</p>
-            ) : isTwoMeal ? (
-              <p className="text-gray-600 mt-1 text-xs sm:text-sm">每日2餐辅食 · 逐步丰富食物种类</p>
-            ) : (
-              <p className="text-gray-600 mt-1 text-xs sm:text-sm">{SHARE.description}</p>
-            )}
+            ) : null}
           </div>
 
           <div className="flex gap-2 flex-shrink-0">
