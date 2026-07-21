@@ -366,8 +366,8 @@ export function RecipePage() {
           </motion.div>
         )}
 
-        {/* 快捷说明 */}
-        {!isShareMode && (
+        {/* 快捷说明（6-8月龄不显示，无食谱操作） */}
+        {!isShareMode && !is6to8m && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
