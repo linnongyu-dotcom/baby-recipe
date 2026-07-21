@@ -570,22 +570,7 @@ export function RecipePage() {
           >
             <div className="flex items-center gap-2 mb-6">
               <span className="text-2xl">📋</span>
-              <h2 className="text-xl font-semibold text-gray-800">辅食添加计划参考</h2>
-            </div>
-            <div className="flex gap-2 mb-6">
-              {([6, 7, 8] as const).map((m) => (
-                <button
-                  key={m}
-                  onClick={() => setFeedingMonth(m)}
-                  className={`px-5 py-2 rounded-xl text-sm font-medium transition-all ${
-                    feedingMonth === m
-                      ? 'bg-purple-500 text-white shadow-md'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  {m}个月
-                </button>
-              ))}
+              <h2 className="text-xl font-semibold text-gray-800">{feedingMonth}个月辅食添加计划</h2>
             </div>
             <ComplementaryFeedingPlan month={feedingMonth} />
           </motion.div>
