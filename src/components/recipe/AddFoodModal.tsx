@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { X } from 'lucide-react';
 import { Modal } from '../common/Modal';
 import { Button } from '../common/Button';
 import { FoodRecord, FoodStatus, FoodIntroCategory, FoodObservation, FOOD_CATEGORY_INFO } from '../../types';
@@ -35,19 +34,22 @@ const OBSERVATION_OPTIONS: { value: FoodObservation; label: string }[] = [
 export function AddFoodModal({ isOpen, onClose, existingRecord, onSave }: AddFoodModalProps) {
   const [selectedCategory, setSelectedCategory] = useState<FoodIntroCategory>(existingRecord?.category || 'grain');
   const [selectedFood, setSelectedFood] = useState<string>(existingRecord?.name || '');
+  const [customFood, setCustomFood] = useState('');
   const [status, setStatus] = useState<FoodStatus>(existingRecord?.status || 'trying');
   const [observation, setObservation] = useState<FoodObservation>(existingRecord?.observation || 'good');
   const [note, setNote] = useState(existingRecord?.note || '');
 
-  const foodDef = selectedFood ? findFoodDef(selectedFood) : null;
+  const isCustom = !!customFood && !FOOD_NAMES_BY_CATEGORY[selectedCategory].includes(customFood);
+  const effectiveFood = customFood || selectedFood;
+  const foodDef = effectiveFood ? findFoodDef(effectiveFood) : null;
   const isTrying = status === 'trying';
 
   const handleSave = () => {
-    if (!selectedFood) return;
+    if (!effectiveFood) return;
 
     const now = new Date().toISOString().slice(0, 10);
     const record: FoodRecord = {
-      name: selectedFood,
+      name: effectiveFood,
       category: selectedCategory,
       status,
       ...(status === 'trying' && !existingRecord?.tryDate ? { tryDate: now } : existingRecord?.tryDate ? { tryDate: existingRecord.tryDate } : {}),
@@ -63,6 +65,7 @@ export function AddFoodModal({ isOpen, onClose, existingRecord, onSave }: AddFoo
 
   const resetForm = () => {
     setSelectedFood('');
+    setCustomFood('');
     setStatus('trying');
     setObservation('good');
     setNote('');
@@ -83,7 +86,7 @@ export function AddFoodModal({ isOpen, onClose, existingRecord, onSave }: AddFoo
             {(Object.entries(FOOD_CATEGORY_INFO) as [FoodIntroCategory, typeof FOOD_CATEGORY_INFO['grain']][]).map(([key, info]) => (
               <button
                 key={key}
-                onClick={() => { setSelectedCategory(key); setSelectedFood(''); }}
+                onClick={() => { setSelectedCategory(key); setSelectedFood(''); setCustomFood(''); }}
                 className={`px-3 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-2 ${
                   selectedCategory === key
                     ? 'bg-purple-500 text-white shadow'
@@ -100,13 +103,13 @@ export function AddFoodModal({ isOpen, onClose, existingRecord, onSave }: AddFoo
         {/* 步骤2：选择食材 */}
         <div>
           <label className="text-sm font-medium text-gray-700 mb-2 block">选择食材</label>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 mb-3">
             {FOOD_NAMES_BY_CATEGORY[selectedCategory].map(food => (
               <button
                 key={food}
-                onClick={() => setSelectedFood(food)}
+                onClick={() => { setSelectedFood(food); setCustomFood(''); }}
                 className={`px-3 py-1.5 rounded-full text-sm transition-all ${
-                  selectedFood === food
+                  effectiveFood === food
                     ? 'bg-purple-500 text-white shadow'
                     : 'bg-gray-100 text-gray-700 hover:bg-purple-100'
                 }`}
@@ -115,10 +118,22 @@ export function AddFoodModal({ isOpen, onClose, existingRecord, onSave }: AddFoo
               </button>
             ))}
           </div>
+          <div className="relative">
+            <input
+              type="text"
+              value={customFood}
+              onChange={(e) => { setCustomFood(e.target.value); setSelectedFood(''); }}
+              placeholder="或其他食材名称..."
+              className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:border-purple-300 focus:ring-1 focus:ring-purple-300 outline-none"
+            />
+            {isCustom && (
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-purple-500">自定义</span>
+            )}
+          </div>
         </div>
 
         {/* 步骤3：选择状态 */}
-        {selectedFood && (
+        {effectiveFood && (
           <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="space-y-4">
             <div>
               <label className="text-sm font-medium text-gray-700 mb-2 block">当前状态</label>
@@ -164,10 +179,10 @@ export function AddFoodModal({ isOpen, onClose, existingRecord, onSave }: AddFoo
               </motion.div>
             )}
 
-            {/* 食材信息和备注 */}
-            {foodDef && (
-              <div className="bg-amber-50 rounded-xl p-3 text-sm text-amber-800">
-                {isTrying ? (
+            {/* 食材信息 */}
+            <div className="bg-amber-50 rounded-xl p-3 text-sm text-amber-800">
+              {foodDef ? (
+                isTrying ? (
                   <>
                     <p className="font-medium mb-1">{foodDef.addMethod}</p>
                     <p className="text-amber-600">建议单独尝试，观察2-3天</p>
@@ -176,9 +191,15 @@ export function AddFoodModal({ isOpen, onClose, existingRecord, onSave }: AddFoo
                   <p className="text-red-700">⚠ 该食材后续推荐时降低优先级</p>
                 ) : (
                   <p className="text-green-700">✅ 宝宝已接受该食材！</p>
-                )}
-              </div>
-            )}
+                )
+              ) : isTrying ? (
+                <p className="text-amber-600">建议单独尝试，观察2-3天</p>
+              ) : status === 'unsuitable' ? (
+                <p className="text-red-700">⚠ 该食材后续推荐时降低优先级</p>
+              ) : (
+                <p className="text-green-700">✅ 宝宝已接受该食材！</p>
+              )}
+            </div>
 
             {/* 备注 */}
             {status === 'unsuitable' && (
@@ -201,7 +222,7 @@ export function AddFoodModal({ isOpen, onClose, existingRecord, onSave }: AddFoo
           <Button onClick={handleClose} variant="outline" className="flex-1">
             取消
           </Button>
-          <Button onClick={handleSave} variant="primary" className="flex-1" disabled={!selectedFood}>
+          <Button onClick={handleSave} variant="primary" className="flex-1" disabled={!effectiveFood}>
             {existingRecord ? '更新' : '确认添加'}
           </Button>
         </div>
