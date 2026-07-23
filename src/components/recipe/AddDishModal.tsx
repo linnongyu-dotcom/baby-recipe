@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Plus, Search, ChefHat, Heart } from 'lucide-react';
-import { Recipe, DishType, DISH_TYPE_LABELS, DISH_TYPE_ICONS, UserSettings } from '@/types';
+import { Recipe, DishType, DISH_TYPE_LABELS, DISH_TYPE_ICONS, UserSettings, FoodRecord } from '@/types';
 import { recipes } from '@/data/recipes';
 import { createCustomRecipe } from '@/utils/recipeGenerator';
 import { Button } from '@/components/common/Button';
@@ -49,8 +49,20 @@ function filterAvailable(dishType: DishType, settings: UserSettings, usedIds: Se
   });
 }
 
+// 计算食谱与宝宝已接受食材的匹配度
+function scoreByAcceptedFoods(recipe: Recipe, acceptedFoodNames: string[]): number {
+  if (acceptedFoodNames.length === 0) return 0;
+  let score = 0;
+  for (const ing of recipe.mainIngredients) {
+    if (acceptedFoodNames.some(f => ing.includes(f) || f.includes(ing))) {
+      score += 1;
+    }
+  }
+  return score;
+}
+
 export function AddDishModal({ onAdd, onCancel, usedIds }: AddDishModalProps) {
-  const { settings, customRecipes, addCustomRecipe, favoriteIds, toggleFavorite } = useStore();
+  const { settings, customRecipes, addCustomRecipe, favoriteIds, toggleFavorite, foodRecords } = useStore();
   const [step, setStep] = useState<Step>('category');
   const [selectedType, setSelectedType] = useState<DishType>('meat');
   const [searchText, setSearchText] = useState('');
@@ -60,9 +72,25 @@ export function AddDishModal({ onAdd, onCancel, usedIds }: AddDishModalProps) {
   const [customIngredients, setCustomIngredients] = useState('');
   const [customSteps, setCustomSteps] = useState('');
 
+  // 已接受的食材名称
+  const acceptedFoodNames = useMemo(() => {
+    return foodRecords
+      .filter(r => r.status === 'accepted')
+      .map(r => r.name);
+  }, [foodRecords]);
+
   const availableRecipes = useMemo(
-    () => filterAvailable(selectedType, settings, usedIds, customRecipes),
-    [selectedType, settings, usedIds, customRecipes]
+    () => {
+      const filtered = filterAvailable(selectedType, settings, usedIds, customRecipes);
+      // 按已接受食材匹配度排序：匹配度高的优先
+      if (acceptedFoodNames.length > 0) {
+        return [...filtered].sort(
+          (a, b) => scoreByAcceptedFoods(b, acceptedFoodNames) - scoreByAcceptedFoods(a, acceptedFoodNames)
+        );
+      }
+      return filtered;
+    },
+    [selectedType, settings, usedIds, customRecipes, acceptedFoodNames]
   );
 
   const favRecipes = useMemo(() => {
@@ -240,7 +268,9 @@ export function AddDishModal({ onAdd, onCancel, usedIds }: AddDishModalProps) {
                     : '没有匹配的菜品'}
               </p>
             ) : (
-              filteredRecipes.slice(0, 30).map((recipe) => (
+              filteredRecipes.slice(0, 30).map((recipe) => {
+                const matchedCount = scoreByAcceptedFoods(recipe, acceptedFoodNames);
+                return (
                 <div key={recipe.id} className="flex items-center gap-1">
                   <motion.button
                     whileHover={{ scale: 1.01 }}
@@ -249,7 +279,14 @@ export function AddDishModal({ onAdd, onCancel, usedIds }: AddDishModalProps) {
                     className="flex-1 flex items-center gap-3 p-3 rounded-lg bg-gray-50 hover:bg-purple-50 border border-transparent hover:border-purple-200 transition-all text-left"
                   >
                     <div className="flex-1 min-w-0">
-                      <div className="font-medium text-gray-800 truncate">{recipe.name}</div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-gray-800 truncate">{recipe.name}</span>
+                        {matchedCount > 0 && (
+                          <span className="px-1.5 py-0.5 bg-green-100 text-green-600 rounded text-xs flex-shrink-0">
+                            已尝试食材
+                          </span>
+                        )}
+                      </div>
                       <div className="flex flex-wrap gap-1 mt-1">
                         {recipe.mainIngredients.slice(0, 3).map((ing) => (
                           <span key={ing} className="px-1.5 py-0.5 bg-gray-200 text-gray-600 rounded text-xs">
@@ -277,7 +314,8 @@ export function AddDishModal({ onAdd, onCancel, usedIds }: AddDishModalProps) {
                     <Heart className="w-4 h-4" fill={favoriteIds.includes(recipe.id) ? 'currentColor' : 'none'} />
                   </motion.button>
                 </div>
-              ))
+                );
+              })
             )}
           </div>
 

@@ -1,17 +1,19 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { RefreshCw, ArrowUpDown, Plus, Eye, X, Lightbulb, Heart } from 'lucide-react';
-import { Recipe, MealType, MealPlan, DISH_TYPE_ICONS, DishType } from '@/types';
+import { Recipe, MealType, MealPlan, AgeGroup, NUTRITION_TAG_ICONS } from '@/types';
 import { Card } from '@/components/common/Card';
 import { Modal } from '@/components/common/Modal';
 import { RecipeDetail } from './RecipeDetail';
 import { AddDishModal } from './AddDishModal';
 import { IngredientInspiration } from './IngredientInspiration';
 import { useStore } from '@/store/useStore';
+import { groupDishesByMealCategory, deriveNutritionTags, checkMealMandatory, MealMandatoryCheck } from '@/utils/mealValidator';
 
 interface RecipeCardProps {
   mealPlan: MealPlan;
   mealType: MealType;
+  ageGroup?: AgeGroup;
   onRefresh: () => void;
   onReplaceDish: (dishIndex: number) => void;
   onRemoveDish: (dishIndex: number) => void;
@@ -25,9 +27,19 @@ interface RecipeCardProps {
   mealEmoji?: string;
 }
 
+// 分类展示配置
+const CATEGORY_GROUPS = [
+  { key: 'staple', label: '主食', icon: '🍚', color: 'bg-amber-50 border-amber-200' },
+  { key: 'protein', label: '蛋白质', icon: '🥩', color: 'bg-red-50 border-red-200' },
+  { key: 'vegetable', label: '蔬菜', icon: '🥬', color: 'bg-green-50 border-green-200' },
+  { key: 'soup', label: '汤品', icon: '🍲', color: 'bg-blue-50 border-blue-200' },
+  { key: 'fruit', label: '水果', icon: '🍎', color: 'bg-orange-50 border-orange-200' },
+] as const;
+
 export function RecipeCard({
   mealPlan,
   mealType,
+  ageGroup,
   onRefresh,
   onReplaceDish,
   onRemoveDish,
@@ -48,6 +60,14 @@ export function RecipeCard({
   const mealIcon = mealEmoji || (mealType === 'breakfast' ? '🌅' : mealType === 'lunch' ? '☀️' : '🌙');
   const mealLabel = mealTitle || (mealType === 'breakfast' ? '早餐' : mealType === 'lunch' ? '午餐' : '晚餐');
 
+  // 按展示类别分组
+  const categoryGroups = groupDishesByMealCategory(mealPlan.dishes);
+
+  // 必选项检查（1岁以上）
+  const mandatoryCheck: MealMandatoryCheck | null = ageGroup
+    ? checkMealMandatory(mealPlan.dishes, ageGroup, mealType)
+    : null;
+
   const handleViewDetail = (recipe: Recipe) => {
     setSelectedRecipe(recipe);
     setShowDetail(true);
@@ -65,16 +85,6 @@ export function RecipeCard({
     });
   };
 
-  // 按菜品类型分组，按合理顺序展示
-  const dishOrder: DishType[] = ['staple', 'meat', 'egg', 'vegetable', 'soup', 'dessert'];
-  const groupedDishes = mealPlan.dishes.reduce((acc, dish) => {
-    if (!acc[dish.dishType]) {
-      acc[dish.dishType] = [];
-    }
-    acc[dish.dishType].push(dish);
-    return acc;
-  }, {} as Record<DishType, Recipe[]>);
-
   return (
     <>
       <Card className="relative overflow-hidden">
@@ -83,9 +93,6 @@ export function RecipeCard({
           <div className="flex items-center gap-2">
             <span className="text-2xl">{mealIcon}</span>
             <h3 className="text-lg font-semibold text-gray-800">{mealLabel}</h3>
-            <span className="text-sm text-gray-500">
-              ({mealPlan.dishes.length}道菜)
-            </span>
           </div>
           {onSwap && mealType !== 'breakfast' && (
             <motion.button
@@ -100,57 +107,86 @@ export function RecipeCard({
           )}
         </div>
 
-        {/* 菜品列表（按类型分组，带做法展开） */}
+        {/* 菜品列表（按类别分组展示） */}
         <div className="space-y-3 mb-4">
-          {dishOrder
-            .filter((dt) => groupedDishes[dt] && groupedDishes[dt].length > 0)
-            .map((dishType) => (
-              <div key={dishType} className="space-y-2">
-                {groupedDishes[dishType].map((recipe) => {
-                  const isExpanded = expandedIds.has(recipe.id);
-                  const globalIndex = mealPlan.dishes.indexOf(recipe);
-                  return (
-                    <div
-                      key={recipe.id}
-                      className="bg-gray-50 rounded-lg overflow-hidden"
+          {CATEGORY_GROUPS.filter(g => categoryGroups[g.key].length > 0).map((group) => (
+            <div key={group.key} className="space-y-1.5">
+              {/* 分类标签 */}
+              <div className="flex items-center gap-1.5 px-1">
+                <span className="text-sm">{group.icon}</span>
+                <span className="text-xs font-medium text-gray-500">{group.label}</span>
+              </div>
+              {/* 该类菜品 */}
+              {categoryGroups[group.key].map((recipe) => {
+                const isExpanded = expandedIds.has(recipe.id);
+                const globalIndex = mealPlan.dishes.indexOf(recipe);
+                const nutritionTags = deriveNutritionTags(recipe);
+                return (
+                  <div
+                    key={recipe.id}
+                    className="bg-gray-50 rounded-lg overflow-hidden ml-5"
+                  >
+                    <motion.div
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      className="flex items-center gap-2 p-2 hover:bg-gray-100 transition-colors cursor-pointer"
+                      onClick={() => toggleExpand(recipe.id)}
                     >
-                      <motion.div
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        className="flex items-center gap-2 p-2 hover:bg-gray-100 transition-colors cursor-pointer"
-                        onClick={() => toggleExpand(recipe.id)}
-                      >
-                        <span className="text-lg flex-shrink-0">
-                          {DISH_TYPE_ICONS[dishType]}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <div className="font-medium text-gray-800 truncate">
-                            {recipe.name}
-                          </div>
-                          <div className="flex flex-wrap gap-1 mt-0.5">
-                            {recipe.tags.slice(0, 2).map((tag) => (
-                              <span
-                                key={tag}
-                                className="px-1.5 py-0.5 bg-purple-100 text-purple-600 rounded text-xs"
-                              >
-                                {tag}
-                              </span>
-                            ))}
-                          </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-gray-800 truncate">
+                          {recipe.name}
                         </div>
-                        {!readOnly && (<>
-                        <motion.button
-                          whileHover={{ scale: 1.1 }}
-                          whileTap={{ scale: 0.9 }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onReplaceDish(globalIndex);
-                          }}
-                          className="p-1 rounded hover:bg-orange-100 text-orange-500 flex-shrink-0"
-                          title="换一道"
-                        >
-                          <RefreshCw className="w-3.5 h-3.5" />
-                        </motion.button>
+                        <div className="flex flex-wrap gap-1 mt-0.5">
+                          {nutritionTags.slice(0, 3).map((tag) => (
+                            <span
+                              key={tag}
+                              className="px-1.5 py-0.5 bg-purple-50 text-purple-600 rounded text-xs flex items-center gap-0.5"
+                            >
+                              <span className="text-[10px]">{NUTRITION_TAG_ICONS[tag]}</span>
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      {!readOnly && (<>
+                      <motion.button
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onReplaceDish(globalIndex);
+                        }}
+                        className="p-1 rounded hover:bg-orange-100 text-orange-500 flex-shrink-0"
+                        title="换一道"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                      </motion.button>
+                      <motion.button
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleViewDetail(recipe);
+                        }}
+                        className="p-1 rounded hover:bg-purple-100 text-purple-500 flex-shrink-0"
+                        title="查看详情"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </motion.button>
+                      <motion.button
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onRemoveDish(globalIndex);
+                        }}
+                        className="p-1 rounded hover:bg-red-100 text-red-400 flex-shrink-0"
+                        title="删除"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </motion.button>
+                      </>)}
+                      {readOnly && (
                         <motion.button
                           whileHover={{ scale: 1.1 }}
                           whileTap={{ scale: 0.9 }}
@@ -163,104 +199,109 @@ export function RecipeCard({
                         >
                           <Eye className="w-4 h-4" />
                         </motion.button>
-                        <motion.button
-                          whileHover={{ scale: 1.1 }}
-                          whileTap={{ scale: 0.9 }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onRemoveDish(globalIndex);
-                          }}
-                          className="p-1 rounded hover:bg-red-100 text-red-400 flex-shrink-0"
-                          title="删除"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </motion.button>
-                        </>)}
-                        {readOnly && (
-                          <motion.button
-                            whileHover={{ scale: 1.1 }}
-                            whileTap={{ scale: 0.9 }}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleViewDetail(recipe);
-                            }}
-                            className="p-1 rounded hover:bg-purple-100 text-purple-500 flex-shrink-0"
-                            title="查看详情"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </motion.button>
-                        )}
-                        <motion.button
-                          whileHover={{ scale: 1.2 }}
-                          whileTap={{ scale: 0.8 }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleFavorite(recipe.id);
-                          }}
-                          className={`p-1 rounded flex-shrink-0 transition-colors ${
-                            favoriteIds.includes(recipe.id)
-                              ? 'text-red-400 hover:bg-red-50'
-                              : 'text-gray-300 hover:text-red-300 hover:bg-red-50'
-                          }`}
-                          title={favoriteIds.includes(recipe.id) ? '取消收藏' : '收藏'}
-                        >
-                          <Heart className="w-3.5 h-3.5" fill={favoriteIds.includes(recipe.id) ? 'currentColor' : 'none'} />
-                        </motion.button>
-                      </motion.div>
+                      )}
+                      <motion.button
+                        whileHover={{ scale: 1.2 }}
+                        whileTap={{ scale: 0.8 }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleFavorite(recipe.id);
+                        }}
+                        className={`p-1 rounded flex-shrink-0 transition-colors ${
+                          favoriteIds.includes(recipe.id)
+                            ? 'text-red-400 hover:bg-red-50'
+                            : 'text-gray-300 hover:text-red-300 hover:bg-red-50'
+                        }`}
+                        title={favoriteIds.includes(recipe.id) ? '取消收藏' : '收藏'}
+                      >
+                        <Heart className="w-3.5 h-3.5" fill={favoriteIds.includes(recipe.id) ? 'currentColor' : 'none'} />
+                      </motion.button>
+                    </motion.div>
 
-                      {/* 展开的做法 */}
-                      <AnimatePresence>
-                        {isExpanded && (
-                          <motion.div
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: 'auto', opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
-                            className="border-t border-gray-200 bg-white"
-                          >
-                            <div className="p-3 space-y-3 text-sm">
-                              {/* 食材 */}
-                              <div>
-                                <div className="font-medium text-gray-700 mb-1.5 flex items-center gap-1">
-                                  🥗 食材
-                                </div>
-                                <div className="flex flex-wrap gap-1.5">
-                                  {recipe.ingredients.map((ing, i) => (
-                                    <span
-                                      key={i}
-                                      className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs"
-                                    >
-                                      {ing.name} {ing.amount}
-                                    </span>
-                                  ))}
-                                </div>
+                    {/* 展开的做法 */}
+                    <AnimatePresence>
+                      {isExpanded && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          className="border-t border-gray-200 bg-white"
+                        >
+                          <div className="p-3 space-y-3 text-sm">
+                            {/* 食材 */}
+                            <div>
+                              <div className="font-medium text-gray-700 mb-1.5 flex items-center gap-1">
+                                🥗 食材
                               </div>
-
-                              {/* 做法 */}
-                              <div>
-                                <div className="font-medium text-gray-700 mb-1.5 flex items-center gap-1">
-                                  👨‍🍳 做法
-                                </div>
-                                <ol className="space-y-1 text-gray-600 pl-1">
-                                  {recipe.steps.map((step, i) => (
-                                    <li key={i} className="flex gap-1.5">
-                                      <span className="text-purple-500 font-medium flex-shrink-0">
-                                        {i + 1}.
-                                      </span>
-                                      <span className="flex-1">{step}</span>
-                                    </li>
-                                  ))}
-                                </ol>
+                              <div className="flex flex-wrap gap-1.5">
+                                {recipe.ingredients.map((ing, i) => (
+                                  <span
+                                    key={i}
+                                    className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs"
+                                  >
+                                    {ing.name} {ing.amount}
+                                  </span>
+                                ))}
                               </div>
                             </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
+
+                            {/* 做法 */}
+                            <div>
+                              <div className="font-medium text-gray-700 mb-1.5 flex items-center gap-1">
+                                👨‍🍳 做法
+                              </div>
+                              <ol className="space-y-1 text-gray-600 pl-1">
+                                {recipe.steps.map((step, i) => (
+                                  <li key={i} className="flex gap-1.5">
+                                    <span className="text-purple-500 font-medium flex-shrink-0">
+                                      {i + 1}.
+                                    </span>
+                                    <span className="flex-1">{step}</span>
+                                  </li>
+                                ))}
+                              </ol>
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
         </div>
+
+        {/* 必选项营养检查（1岁以上每餐） */}
+        {mandatoryCheck && !mandatoryCheck.allOk && (
+          <div className="mb-4 p-3 bg-amber-50 rounded-xl border border-amber-200">
+            <p className="text-xs font-medium text-amber-700 mb-1.5">
+              ⚠️ 本餐缺少
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {mandatoryCheck.missingLabels.map(label => (
+                <span key={label} className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded text-xs">
+                  {label}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+        {mandatoryCheck?.allOk && (
+          <div className="mb-4 p-2 bg-green-50 rounded-lg border border-green-100 flex items-center gap-1.5 flex-wrap">
+            <span className="text-xs text-green-600">✅ 主食</span>
+            <span className="text-xs text-green-600">✅ 蛋白质</span>
+            {mandatoryCheck.vegetableOk && <span className="text-xs text-green-600">✅ 蔬菜</span>}
+          </div>
+        )}
+        {/* 早餐推荐建议（非必须） */}
+        {mandatoryCheck && mandatoryCheck.breakfastSuggestions.length > 0 && (
+          <div className="mb-4 p-2 bg-blue-50 rounded-lg border border-blue-100">
+            <p className="text-xs text-blue-600">
+              💡 {mandatoryCheck.breakfastSuggestions[0]}
+            </p>
+          </div>
+        )}
 
         {/* 操作按钮 */}
         {!readOnly && (

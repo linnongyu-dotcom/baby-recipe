@@ -14,8 +14,9 @@ import { DAYS_OF_WEEK, DAY_LABELS, DayOfWeek, AGE_GROUP_LABELS, AgeGroup, Weekly
 import { calcAge, getMealLabels, getMealIcons } from '@/utils/babyProfile';
 import { downloadRecipePDF } from '@/utils/pdfGenerator';
 import { encodeShareData, decodeShareData } from '@/utils/shareUtils';
-import { analyzeDayNutrition, analyzeWeekNutrition, generateSnacks } from '@/utils/nutritionEngine';
+import { analyzeDayNutrition, analyzeWeekNutrition, generateSnacks, getSupplementFoods, getSupplementDescription } from '@/utils/nutritionEngine';
 import { BRAND, BRAND_ASSETS, setPageTitle } from '@/config/brand';
+import { lookupFoodCategory } from '@/utils/foodDictionary';
 
 interface NutritionGuide {
   title: string;
@@ -84,10 +85,10 @@ function getNutritionGuide(age: AgeGroup, month?: number): NutritionGuide {
   if (age === '9-11m' && month) {
     const guidesByMonth: Record<number, NutritionGuide> = {
       9: {
-        title: '9个月 咀嚼练习期',
+        title: '9个月 辅食进阶期',
         dailyNeeds: [
           '奶量：600ml/天',
-          '辅食：2餐，每餐约50-80ml',
+          '辅食：1-2餐，每餐约50-80ml',
           '每日谷物30-50g、蔬菜30-40g、水果30-40g',
           '每日肉/鱼/禽20-30g、蛋黄1/2到1个',
         ],
@@ -103,12 +104,12 @@ function getNutritionGuide(age: AgeGroup, month?: number): NutritionGuide {
         title: '10个月 咀嚼练习期',
         dailyNeeds: [
           '奶量：500-600ml/天',
-          '辅食：2-3餐，每餐约80-120ml',
+          '辅食：2餐，每餐约80-120ml',
           '每日谷物40-60g、蔬菜40-50g、水果40-50g',
           '每日肉/鱼/禽25-40g、蛋黄1个',
         ],
         tips: [
-          '食物形态：软颗粒状，提供手指食物锻炼抓握',
+          '食物形态：软颗粒状，增加食物组合练习不同质地',
           '植物油可增至3-5g/天',
           '鼓励宝宝自己用手抓食物，培养自主进食',
           '逐步建立早中晚三餐节奏，与家人共餐',
@@ -116,18 +117,18 @@ function getNutritionGuide(age: AgeGroup, month?: number): NutritionGuide {
         avoid: ['蜂蜜', '整颗坚果', '盐和糖', '鲜牛奶', '果冻', '容易呛噎的食物'],
       },
       11: {
-        title: '11个月 咀嚼练习期',
+        title: '11个月 家庭饮食过渡期',
         dailyNeeds: [
           '奶量：500-600ml/天',
-          '辅食：3餐，每餐约100-150ml',
+          '辅食：2-3餐，每餐约100-150ml',
           '每日谷物50-70g、蔬菜50-60g、水果50-60g',
           '每日肉/鱼/禽30-50g、蛋黄1个',
         ],
         tips: [
-          '食物形态：软饭、碎菜、小肉丁，接近家庭饮食',
+          '食物形态：软饭、碎菜、小肉丁，逐步接近家庭饮食',
           '植物油约5g/天，仍不加盐和糖',
-          '练习用勺子自己吃饭，不追喂',
-          '为1岁过渡做准备，逐步减少奶量、增加饭量',
+          '增加手指食物和软饭小颗粒食物',
+          '练习用勺子自己吃饭，培养自主进食能力',
         ],
         avoid: ['蜂蜜', '整颗坚果', '盐和糖', '鲜牛奶', '果冻', '容易呛噎的食物'],
       },
@@ -220,12 +221,24 @@ function getNutritionGuide(age: AgeGroup, month?: number): NutritionGuide {
   return guides[age];
 }
 
+// 9个月新食材尝试建议
+const FOOD_SUGGESTIONS_9M = [
+  { name: '豆腐', icon: '🫘', category: '蛋白质', reason: '优质植物蛋白，易消化' },
+  { name: '三文鱼', icon: '🐟', category: '鱼类', reason: '富含DHA，助力大脑发育' },
+  { name: '牛油果', icon: '🥑', category: '水果', reason: '健康脂肪，口感细腻' },
+  { name: '燕麦', icon: '🌾', category: '谷物', reason: '膳食纤维丰富' },
+  { name: '西兰花', icon: '🥦', category: '蔬菜', reason: '维生素C含量高' },
+  { name: '鸡肝', icon: '🐔', category: '内脏', reason: '补铁佳品，每周1-2次' },
+  { name: '山药', icon: '🥔', category: '根茎', reason: '健脾养胃，易消化' },
+  { name: '蓝莓', icon: '🫐', category: '水果', reason: '抗氧化，花青素丰富' },
+];
+
 export function RecipePage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const store = useStore();
   const { weeklyPlan, settings, babyName, babies, currentBabyId, regenerateMeal, regenerateDish, removeDish, swapMeals, setCustomMeal, addDish,
-    foodRecords, feedingMonth, addFoodRecord, setFeedingMonth } = store;
+    foodRecords, feedingMonth, addFoodRecord, setFeedingMonth, generatePlan } = store;
 
   const shareParam = searchParams.get('share');
   const [sharedData, setSharedData] = useState<{ weeklyPlan: WeeklyPlan; ageLabel: string; ageGroup?: AgeGroup } | null>(null);
@@ -248,6 +261,24 @@ export function RecipePage() {
   const is6to8m = effectiveAgeGroup === '6-8m';
   const is9to11m = effectiveAgeGroup === '9-11m';
   const isTwoMeal = is6to8m || is9to11m;
+
+  // 宝宝精确月龄（9/10/11）
+  const babyMonth = babyAgeInfo?.totalMonths;
+  const is9m = is9to11m && babyMonth === 9;
+  const is10m = is9to11m && babyMonth === 10;
+  const is11m = is9to11m && babyMonth === 11;
+
+  // 已接受的食材名称列表（从 foodRecords 中提取）
+  const acceptedFoodNames = useMemo(() => {
+    return foodRecords
+      .filter(r => r.status === 'accepted')
+      .map(r => r.name);
+  }, [foodRecords]);
+
+  const acceptedFoodCount = acceptedFoodNames.length;
+
+  // 9个月：已添加食材较多时可以显示第二餐
+  const showSecondMealFor9m = !is9m || acceptedFoodCount >= 5;
 
   // 6-8月龄自动匹配当前月份
   useEffect(() => {
@@ -313,14 +344,36 @@ export function RecipePage() {
     return analyzeWeekNutrition(displayPlan, effectiveAgeGroup);
   }, [displayPlan, effectiveAgeGroup]);
 
+  // 自动生成/重新生成食谱
+  useEffect(() => {
+    if (isShareMode || isInfantFeeding || babies.length === 0 || !effectiveAgeGroup) return;
+    
+    // 需要重新生成的情况：
+    // 1. 无食谱
+    // 2. 食谱的年龄段与当前宝宝年龄不匹配（如从9-11m变成1-2y，晚餐应从空变为有菜）
+    const planAge = settings.babyAge;
+    const ageMismatch = planAge && planAge !== effectiveAgeGroup;
+    
+    if (!weeklyPlan || ageMismatch) {
+      generatePlan();
+    }
+  }, []); // 仅在挂载时执行
+
   // 无宝宝时跳转到创建页
   if (!weeklyPlan && !isShareMode && !isInfantFeeding) {
     if (babies.length === 0) {
       return <Navigate to="/setup" replace />;
     }
-    // 有宝宝但没有食谱，跳转到设置页生成
+    // 正在自动生成中，显示加载状态
     if (effectiveAgeGroup) {
-      return <Navigate to="/setup" replace />;
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-purple-100 via-purple-50 to-pink-50 flex items-center justify-center">
+          <div className="text-center">
+            <Loader2 className="w-8 h-8 animate-spin text-purple-500 mx-auto" />
+            <p className="text-gray-500 mt-4">正在生成食谱...</p>
+          </div>
+        </div>
+      );
     }
   }
 
@@ -413,6 +466,12 @@ export function RecipePage() {
               <img src={BRAND_ASSETS.logo} alt={BRAND.name} className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl flex-shrink-0" />
               {isShareMode ? (
                 <span className="whitespace-nowrap">分享食谱</span>
+              ) : is9m ? (
+                <span className="whitespace-nowrap">9个月 辅食进阶期 营养科学指南</span>
+              ) : is10m ? (
+                <span className="whitespace-nowrap">10个月 咀嚼练习期 营养科学指南</span>
+              ) : is11m ? (
+                <span className="whitespace-nowrap">11个月 家庭饮食过渡期 营养科学指南</span>
               ) : (
                 <span className="whitespace-nowrap">
                   {currentBaby
@@ -429,6 +488,12 @@ export function RecipePage() {
               </p>
             ) : isInfantFeeding ? (
               <p className="text-gray-600 mt-1 text-xs sm:text-sm">🍼 当前阶段：婴儿喂养期 · 专注奶量</p>
+            ) : is9to11m && !isInfantFeeding ? (
+              <p className="text-gray-600 mt-1 text-xs sm:text-sm">
+                {is9m ? '每日1-2餐辅食 · 逐步丰富食材种类 · 建立规律饮食习惯' :
+                 is10m ? '每日2餐辅食 · 增加食物组合 · 练习不同质地食物' :
+                 '每日2餐辅食 · 逐步接近家庭饮食 · 培养自主进食能力'}
+              </p>
             ) : null}
           </div>
 
@@ -484,7 +549,9 @@ export function RecipePage() {
             >
               <div className="flex items-center gap-2">
                 <span className="text-xl">📚</span>
-                <span className="font-semibold text-gray-800">{nutritionGuide.title} 营养科学指南</span>
+                <span className="font-semibold text-gray-800">
+                  {nutritionGuide.title} 营养科学指南
+                </span>
               </div>
               <motion.div
                 animate={{ rotate: showNutritionGuide ? 180 : 0 }}
@@ -595,10 +662,11 @@ export function RecipePage() {
             </div>
             {isTwoMeal ? (
               /* 两餐布局 */
-              <div className="grid md:grid-cols-2 gap-4">
+              <div className={showSecondMealFor9m ? "grid md:grid-cols-2 gap-4" : ""}>
                 <RecipeCard
                   mealPlan={displayPlan[todayDay].breakfast}
                   mealType="breakfast"
+                  ageGroup={effectiveAgeGroup}
                   mealTitle={getMealTitle('breakfast')}
                   mealEmoji={getMealEmoji('breakfast')}
                   onRefresh={() => regenerateMeal(todayDay, 'breakfast')}
@@ -610,10 +678,11 @@ export function RecipePage() {
                   onAddDish={(recipe) => addDish(todayDay, 'breakfast', recipe)}
                   readOnly={isShareMode}
                 />
-                {displayPlan[todayDay].lunch.dishes.length > 0 && (
+                {showSecondMealFor9m && displayPlan[todayDay].lunch.dishes.length > 0 && (
                   <RecipeCard
                     mealPlan={displayPlan[todayDay].lunch}
                     mealType="lunch"
+                    ageGroup={effectiveAgeGroup}
                     mealTitle={getMealTitle('lunch')}
                     mealEmoji={getMealEmoji('lunch')}
                     onRefresh={() => regenerateMeal(todayDay, 'lunch')}
@@ -633,6 +702,7 @@ export function RecipePage() {
                 <RecipeCard
                   mealPlan={displayPlan[todayDay].breakfast}
                   mealType="breakfast"
+                  ageGroup={effectiveAgeGroup}
                   mealTitle={getMealTitle('breakfast')}
                   mealEmoji={getMealEmoji('breakfast')}
                   onRefresh={() => regenerateMeal(todayDay, 'breakfast')}
@@ -648,6 +718,7 @@ export function RecipePage() {
                   <RecipeCard
                     mealPlan={displayPlan[todayDay].lunch}
                     mealType="lunch"
+                    ageGroup={effectiveAgeGroup}
                     mealTitle={getMealTitle('lunch')}
                     mealEmoji={getMealEmoji('lunch')}
                     onRefresh={() => regenerateMeal(todayDay, 'lunch')}
@@ -665,6 +736,7 @@ export function RecipePage() {
                   <RecipeCard
                     mealPlan={displayPlan[todayDay].dinner}
                     mealType="dinner"
+                    ageGroup={effectiveAgeGroup}
                     mealTitle={getMealTitle('dinner')}
                     mealEmoji={getMealEmoji('dinner')}
                     onRefresh={() => regenerateMeal(todayDay, 'dinner')}
@@ -711,7 +783,7 @@ export function RecipePage() {
           </motion.div>
         )}
 
-        {/* 今日营养检查 */}
+        {/* 今日营养搭配（9-11m及以上） */}
         {displayPlan && todayNutrition && !is6to8m && !isInfantFeeding && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -720,36 +792,23 @@ export function RecipePage() {
             className="mb-6 bg-white rounded-2xl shadow-lg p-6"
           >
             <div className="flex items-center gap-2 mb-4">
-              <span className="text-2xl">
-                {todayNutrition.checkType === 'growth' ? '🌱' : '✅'}
-              </span>
+              <span className="text-2xl">🥗</span>
               <h2 className="text-xl font-semibold text-gray-800">
-                {todayNutrition.checkType === 'growth'
-                  ? '今日辅食成长'
-                  : todayNutrition.checkType === 'coverage'
-                  ? '今日营养覆盖检查'
-                  : '今日营养是否均衡'}
+                今日营养搭配
               </h2>
             </div>
 
-            {todayNutrition.checkType === 'growth' && (
-              <p className="text-sm text-purple-600 mb-4 bg-purple-50 rounded-lg px-4 py-2">
-                6-8个月宝宝仍以奶为主要营养来源，辅食重点是逐步尝试和建立饮食习惯。
-              </p>
-            )}
-
+            {/* 已包含 */}
             {todayNutrition.covered.length > 0 && (
               <div className="mb-4">
-                <h3 className="text-sm font-semibold text-green-600 mb-2">
-                  {todayNutrition.checkType === 'growth' ? '今日已尝试' : '已覆盖'}
-                </h3>
+                <h3 className="text-sm font-semibold text-gray-600 mb-2">✅ 已包含</h3>
                 <div className="flex flex-wrap gap-3">
                   {todayNutrition.covered.map((item) => (
                     <span
                       key={item.key}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-50 text-green-700 rounded-full text-sm"
                     >
-                      <span>{item.icon}</span>
+                      <span>🟢</span>
                       <span>{item.name}</span>
                     </span>
                   ))}
@@ -757,30 +816,129 @@ export function RecipePage() {
               </div>
             )}
 
-            {todayNutrition.optimization.length > 0 && (
-              <div>
-                <h3 className="text-sm font-semibold text-purple-600 mb-2">
-                  {todayNutrition.checkType === 'growth' ? '可以尝试' : '温馨提醒'}
-                </h3>
-                <div className="space-y-2">
-                  {todayNutrition.optimization.map((item) => (
-                    <div
-                      key={item.key}
-                      className="flex items-center px-4 py-2 bg-purple-50 rounded-xl"
-                    >
-                      <span className="text-sm text-purple-700 flex items-center gap-1.5">
-                        <span>{item.icon}</span>
-                        <span>{item.suggestion}</span>
-                      </span>
-                    </div>
-                  ))}
+            {/* 搭配亮点 */}
+            {todayNutrition.covered.length > 0 && (
+              <div className="mb-4 p-4 bg-blue-50 rounded-xl">
+                <h3 className="text-sm font-semibold text-blue-600 mb-2">⭐ 今日搭配亮点</h3>
+                <div className="space-y-1.5">
+                  {(() => {
+                    // 从今日菜品中提取亮点描述
+                    const allDishes = [
+                      ...displayPlan[todayDay].breakfast.dishes,
+                      ...displayPlan[todayDay].lunch.dishes,
+                      ...displayPlan[todayDay].dinner.dishes,
+                    ];
+                    const highlights: string[] = [];
+                    const seen = new Set<string>();
+                    for (const dish of allDishes) {
+                      for (const ing of dish.mainIngredients) {
+                        if (seen.has(ing)) continue;
+                        seen.add(ing);
+                        const cat = lookupFoodCategory(ing);
+                        if (cat === 'staple') highlights.push(`${ing}提供碳水化合物能量`);
+                        else if (cat === 'egg') highlights.push(`${ing}提供优质蛋白和卵磷脂`);
+                        else if (cat === 'fishSeafood') highlights.push(`${ing}富含DHA，助力大脑发育`);
+                        else if (cat === 'redMeat' || cat === 'poultry') highlights.push(`${ing}提供优质蛋白和铁元素`);
+                        else if (cat === 'darkVeg') highlights.push(`${ing}提供维生素和膳食纤维`);
+                        else if (cat === 'lightVeg') highlights.push(`${ing}丰富蔬菜种类`);
+                        else if (cat === 'fruit') highlights.push(`${ing}增加水果摄入，补充维生素`);
+                        else if (cat === 'soyProduct') highlights.push(`${ing}补充植物蛋白`);
+                        if (highlights.length >= 4) break;
+                      }
+                      if (highlights.length >= 4) break;
+                    }
+                    if (highlights.length === 0) {
+                      return <p className="text-sm text-blue-600">今日辅食搭配合理，满足宝宝成长需要</p>;
+                    }
+                    return highlights.map((h, i) => (
+                      <p key={i} className="text-sm text-blue-600">{h}</p>
+                    ));
+                  })()}
                 </div>
               </div>
             )}
 
+            {/* 食材丰富建议 */}
+             {(() => {
+                const visibleOptimization = is9to11m
+                  ? todayNutrition.optimization.filter(item => item.key !== 'dairy')
+                  : todayNutrition.optimization;
+                if (visibleOptimization.length === 0) return null;
+                return (
+                <div className="p-4 bg-purple-50 rounded-xl">
+                  <h3 className="text-sm font-semibold text-purple-600 mb-2">💡 食材丰富建议</h3>
+                  <p className="text-xs text-purple-500 mb-2">
+                    今日搭配已满足基础营养，{effectiveAgeGroup ? getSupplementDescription(effectiveAgeGroup) : '后续可尝试以下食材'}：
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {visibleOptimization.map((item) => {
+                      const foods = effectiveAgeGroup ? getSupplementFoods(item.key, effectiveAgeGroup) : [];
+                      return foods.map((food, i) => (
+                        <span
+                          key={`${item.key}-${i}`}
+                          className="px-2 py-1 bg-purple-100 text-purple-700 rounded-lg text-sm"
+                        >
+                          {food}
+                        </span>
+                      ));
+                    })}
+                  </div>
+                </div>
+                );
+              })()}
+
             {todayNutrition.summary && (
               <p className="mt-4 text-sm text-gray-400 italic">{todayNutrition.summary}</p>
             )}
+          </motion.div>
+        )}
+
+        {/* 新食材尝试建议（9个月） */}
+        {!isShareMode && is9m && !isInfantFeeding && displayPlan && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.07 }}
+            className="mb-6 bg-white rounded-2xl shadow-lg p-6"
+          >
+            <div className="flex items-center gap-2 mb-4">
+              <span className="text-2xl">🌱</span>
+              <h2 className="text-xl font-semibold text-gray-800">新食材尝试建议</h2>
+            </div>
+            <p className="text-sm text-gray-500 mb-4">
+              以下食材适合9个月宝宝尝试，每次添加一种，观察2-3天确认无过敏反应后，再尝试下一种。
+            </p>
+            <div className="space-y-3">
+              {(() => {
+                const untriedFoods = FOOD_SUGGESTIONS_9M.filter(
+                  f => !acceptedFoodNames.includes(f.name)
+                );
+                if (untriedFoods.length === 0) {
+                  return (
+                    <p className="text-sm text-green-600 bg-green-50 rounded-lg px-4 py-3">
+                      🎉 太棒了！宝宝已经尝试过所有推荐的9月龄食材，继续保持多样化饮食哦~
+                    </p>
+                  );
+                }
+                return untriedFoods.map((food, i) => (
+                  <div key={food.name} className="flex items-start gap-3 p-3 bg-amber-50 rounded-xl">
+                    <span className="text-2xl flex-shrink-0">{food.icon}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-gray-800">{food.name}</span>
+                        <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-xs">
+                          {food.category}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-500 mt-0.5">{food.reason}</p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        添加方式：首次少量添加，观察2-3天，确认适应后加入日常食谱
+                      </p>
+                    </div>
+                  </div>
+                ));
+              })()}
+            </div>
           </motion.div>
         )}
 
@@ -799,10 +957,16 @@ export function RecipePage() {
               <div>
                 <div className="flex items-center gap-2">
                   <span className="text-xl">📅</span>
-                  <span className="font-semibold text-gray-800 text-lg">本周推荐</span>
+                  <span className="font-semibold text-gray-800 text-lg">
+                    {is9m ? '本周辅食安排' : is9to11m ? '本周2餐辅食计划' : '本周推荐'}
+                  </span>
                 </div>
                 <p className="text-sm text-gray-500 mt-1">
-                  {isTwoMeal ? '已为宝宝准备好本周2餐辅食，点击即可查看' : '已为宝宝准备好本周食谱，点击即可查看'}
+                  {is9m
+                    ? '帮助宝宝逐步建立规律饮食，重点尝试新食材与已添加食材组合'
+                    : is9to11m
+                    ? '已为宝宝准备好本周2餐辅食计划，点击即可查看和调整'
+                    : '已为宝宝准备好本周食谱，点击即可查看'}
                 </p>
               </div>
               <motion.div
@@ -843,10 +1007,11 @@ export function RecipePage() {
                             </h2>
                           </div>
                           {isTwoMeal ? (
-                            <div className="grid md:grid-cols-2 gap-4">
+                            <div className={showSecondMealFor9m ? "grid md:grid-cols-2 gap-4" : ""}>
                               <RecipeCard
                                 mealPlan={dayPlan.breakfast}
                                 mealType="breakfast"
+                                ageGroup={effectiveAgeGroup}
                                 mealTitle={getMealTitle('breakfast')}
                                 mealEmoji={getMealEmoji('breakfast')}
                                 onRefresh={() => regenerateMeal(day, 'breakfast')}
@@ -858,10 +1023,11 @@ export function RecipePage() {
                                 onAddDish={(recipe) => addDish(day, 'breakfast', recipe)}
                                 readOnly={isShareMode}
                               />
-                              {dayPlan.lunch.dishes.length > 0 && (
+                              {showSecondMealFor9m && dayPlan.lunch.dishes.length > 0 && (
                                 <RecipeCard
                                   mealPlan={dayPlan.lunch}
                                   mealType="lunch"
+                                  ageGroup={effectiveAgeGroup}
                                   mealTitle={getMealTitle('lunch')}
                                   mealEmoji={getMealEmoji('lunch')}
                                   onRefresh={() => regenerateMeal(day, 'lunch')}
@@ -880,6 +1046,7 @@ export function RecipePage() {
                             <RecipeCard
                               mealPlan={dayPlan.breakfast}
                               mealType="breakfast"
+                              ageGroup={effectiveAgeGroup}
                               mealTitle={getMealTitle('breakfast')}
                               mealEmoji={getMealEmoji('breakfast')}
                               onRefresh={() => regenerateMeal(day, 'breakfast')}
@@ -895,6 +1062,7 @@ export function RecipePage() {
                               <RecipeCard
                                 mealPlan={dayPlan.lunch}
                                 mealType="lunch"
+                                ageGroup={effectiveAgeGroup}
                                 mealTitle={getMealTitle('lunch')}
                                 mealEmoji={getMealEmoji('lunch')}
                                 onRefresh={() => regenerateMeal(day, 'lunch')}
@@ -912,6 +1080,7 @@ export function RecipePage() {
                               <RecipeCard
                                 mealPlan={dayPlan.dinner}
                                 mealType="dinner"
+                                ageGroup={effectiveAgeGroup}
                                 mealTitle={getMealTitle('dinner')}
                                 mealEmoji={getMealEmoji('dinner')}
                                 onRefresh={() => regenerateMeal(day, 'dinner')}
@@ -943,11 +1112,7 @@ export function RecipePage() {
                           <h2 className="text-lg font-semibold text-gray-800">本周营养概览</h2>
                         </div>
                         <p className="text-xs text-gray-400 mb-4">
-                          🥗 食物多样性：
-                          <span className={weekNutrition.diversity === '优秀' ? 'text-green-600 font-medium' : weekNutrition.diversity === '良好' ? 'text-blue-600 font-medium' : 'text-amber-600'}>
-                            {weekNutrition.diversity}
-                          </span>
-                          （本周共 {weekNutrition.uniqueIngredients} 种食材）
+                          🥗 本周共 <span className="text-green-600 font-medium">{weekNutrition.uniqueIngredients}</span> 种食材，搭配丰富多样
                         </p>
                         <div className="space-y-3">
                           {weekNutrition.items.map((item) => (
@@ -958,8 +1123,8 @@ export function RecipePage() {
                               <span className="text-sm text-gray-700 flex items-center gap-2">
                                 <span>{item.icon}</span>
                                 <span>{item.name}：</span>
-                                <span className={item.display === '建议增加' ? 'text-amber-600' : item.display === '搭配良好' ? 'text-green-600 font-medium' : 'text-gray-800'}>
-                                  {item.display}
+                                <span className="text-gray-800">
+                                  本周 {item.count} 次
                                 </span>
                               </span>
                               <span className="text-xs text-gray-400">{item.suggestion}</span>

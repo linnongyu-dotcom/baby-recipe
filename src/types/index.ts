@@ -100,6 +100,39 @@ export const DISH_TYPE_ICONS: Record<DishType, string> = {
   dessert: '🍮',
 };
 
+// 蛋白质来源类型
+export type ProteinSource = 'pork' | 'beef' | 'chicken' | 'fish' | 'shrimp' | 'egg' | 'tofu' | 'mixed' | 'none';
+
+// 食物形态
+export type TextureLevel = 'puree' | 'paste' | 'chunky' | 'family';
+
+// 营养标签类型
+export type NutritionTag = '优质蛋白' | '主食补能' | '多彩蔬菜' | 'DHA来源' | '补铁推荐' | '补钙推荐' | '1岁适龄' | '清淡易消化' | '维生素丰富';
+
+// 营养标签图标映射
+export const NUTRITION_TAG_ICONS: Record<NutritionTag, string> = {
+  '优质蛋白': '🥩',
+  '主食补能': '🌾',
+  '多彩蔬菜': '🌈',
+  'DHA来源': '🧠',
+  '补铁推荐': '🦴',
+  '补钙推荐': '🥛',
+  '1岁适龄': '👶',
+  '清淡易消化': '🍃',
+  '维生素丰富': '🍊',
+};
+
+// 食物形态显示名称
+export const TEXTURE_LABELS: Record<TextureLevel, string> = {
+  puree: '泥状',
+  paste: '糊状',
+  chunky: '碎末/小块',
+  family: '家庭餐',
+};
+
+// 一餐中菜品的角色分类（用于结构校验）
+export type MealDishRole = 'staple' | 'protein' | 'vegetable' | 'fruit';
+
 // 食谱类型
 export interface Recipe {
   id: string;
@@ -112,7 +145,60 @@ export interface Recipe {
   dishType: DishType; // 菜品类型
   nutrition: string;
   mainIngredients: string[]; // 主要食材，用于过敏检测
+  proteinSource?: ProteinSource; // 主要蛋白质来源，用于推荐去重
+  textureLevel?: TextureLevel; // 食物形态，用于月龄适配
+  /** 在一餐结构中的角色（主食/蛋白质/蔬菜/水果），用于推荐过滤 */
+  mealRole?: MealDishRole;
+  /** 适合出现在哪些餐次（早/午/晚），不指定则不限 */
+  mealSuitable?: ('breakfast' | 'lunch' | 'dinner')[];
 }
+
+// 各年龄段允许的食物形态
+export const AGE_TEXTURE_RULES: Record<AgeGroup, { allowed: TextureLevel[]; forbidden: TextureLevel[] }> = {
+  '6-8m': { allowed: ['puree', 'paste'], forbidden: ['chunky', 'family'] },
+  '9-11m': { allowed: ['chunky', 'paste'], forbidden: [] },
+  '1-2y': { allowed: ['chunky', 'family'], forbidden: ['puree', 'paste'] },
+  '2-3y': { allowed: ['chunky', 'family'], forbidden: ['puree', 'paste'] },
+  '3-5y': { allowed: ['family'], forbidden: ['puree', 'paste'] },
+};
+
+// 各年龄段推荐的食物质地示例
+export const AGE_TEXTURE_EXAMPLES: Record<AgeGroup, { good: string[]; avoid: string[] }> = {
+  '6-8m': { good: ['菜泥', '肉泥', '蛋黄泥', '米糊', '果泥'], avoid: ['块状食物', '整颗食物'] },
+  '9-11m': { good: ['胡萝卜碎', '胡萝卜软块', '鸡肉末', '软烂面条', '粥'], avoid: ['胡萝卜泥', '长期泥状'] },
+  '1-2y': { good: ['软饭', '小块食物', '家庭菜改良版', '鸡蛋羹', '番茄炒蛋'], avoid: ['菜泥', '肉泥', '蛋黄泥', '蛋黄粥', '蛋黄面条'] },
+  '2-3y': { good: ['正常家庭菜', '鸡肉丁', '米饭套餐', '饺子'], avoid: ['泥状食物', '单独蛋黄'] },
+  '3-5y': { good: ['米饭套餐', '家常菜', '面食', '饺子'], avoid: ['高盐', '高糖', '油炸'] },
+};
+
+// 各年龄段单餐结构规则
+export interface MealStructureRule {
+  staples: number;    // 主食数量
+  proteins: number;   // 蛋白质来源数量
+  vegetables: { min: number; max: number }; // 蔬菜数量范围
+  fruitOptional: boolean; // 水果是否可选
+  maxTotalDishes: number; // 最大总菜品数
+  minTotalDishes: number; // 最小总菜品数
+}
+
+export const AGE_MEAL_STRUCTURE: Record<AgeGroup, MealStructureRule> = {
+  '6-8m': { staples: 1, proteins: 1, vegetables: { min: 0, max: 1 }, fruitOptional: true, maxTotalDishes: 1, minTotalDishes: 1 },
+  '9-11m': { staples: 1, proteins: 1, vegetables: { min: 0, max: 1 }, fruitOptional: true, maxTotalDishes: 1, minTotalDishes: 1 },
+  '1-2y': { staples: 1, proteins: 1, vegetables: { min: 1, max: 2 }, fruitOptional: true, maxTotalDishes: 4, minTotalDishes: 2 },
+  '2-3y': { staples: 1, proteins: 1, vegetables: { min: 1, max: 2 }, fruitOptional: true, maxTotalDishes: 5, minTotalDishes: 3 },
+  '3-5y': { staples: 1, proteins: 1, vegetables: { min: 1, max: 2 }, fruitOptional: true, maxTotalDishes: 5, minTotalDishes: 3 },
+};
+
+// 各年龄段鸡蛋推荐规则
+export type EggRule = 'yolk_only' | 'whole_egg' | 'full_egg_dishes';
+
+export const AGE_EGG_RULES: Record<AgeGroup, EggRule> = {
+  '6-8m': 'yolk_only',
+  '9-11m': 'yolk_only',
+  '1-2y': 'whole_egg',
+  '2-3y': 'full_egg_dishes',
+  '3-5y': 'full_egg_dishes',
+};
 
 // 每日餐次（包含多道菜）
 export interface MealPlan {

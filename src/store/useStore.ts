@@ -379,7 +379,7 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'baby-recipe-storage',
-      version: 37,
+      version: 39,
       migrate: (persistedState: any, version: number) => {
         if (version < 30) {
           return {
@@ -445,6 +445,17 @@ export const useStore = create<AppState>()(
             ...persistedState,
             babies,
             currentBabyId,
+          };
+        }
+        // v39: 强制重新生成，同时清除旧 babyAge 确保年龄段匹配
+        if (version < 39) {
+          return {
+            ...persistedState,
+            weeklyPlan: null,
+            settings: {
+              ...(persistedState?.settings || defaultSettings),
+              babyAge: null,
+            },
           };
         }
         return persistedState;

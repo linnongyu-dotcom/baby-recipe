@@ -8,6 +8,8 @@ export interface NutritionItem {
   icon: string;
   covered: boolean;
   suggestion: string;
+  /** 补充建议的具体食物 */
+  supplementFoods?: string[];
 }
 
 export interface DayNutritionResult {
@@ -169,6 +171,96 @@ export function analyzeDayNutrition(dayPlan: DayPlan, age: AgeGroup): DayNutriti
   const summary = buildDaySummary(covered, optimization, stage);
 
   return { covered, optimization, summary, checkType };
+}
+
+// 营养分类对应的补充食物建议（按年龄段区分）
+const SUPPLEMENT_FOODS_BY_AGE: Record<AgeGroup, Record<string, string[]>> = {
+  '6-8m': {
+    staple: ['强化铁米粉', '小米糊'],
+    protein: ['蛋黄泥', '鸡肉泥', '猪肉泥'],
+    meatFish: ['鸡肉泥', '鳕鱼泥', '牛肉泥'],
+    darkVeg: ['菠菜泥', '西兰花泥', '胡萝卜泥'],
+    lightVeg: ['冬瓜泥', '白萝卜泥'],
+    fruit: ['苹果泥', '香蕉泥', '梨泥'],
+    dairy: ['母乳或配方奶仍是重要营养来源'],
+    egg: ['蛋黄羹', '蒸蛋羹'],
+    iron: ['强化铁米粉', '猪肝泥', '牛肉泥'],
+    vegetable: ['西兰花泥', '菠菜泥', '南瓜泥'],
+    newFood: ['尝试一种新蔬菜或新水果'],
+    soy: ['嫩豆腐泥'],
+  },
+  '9-11m': {
+    staple: ['软饭', '碎菜粥', '小面条'],
+    protein: ['蛋黄碎', '鸡肉末', '猪肉末'],
+    meatFish: ['鸡肉末', '鳕鱼碎', '牛肉末'],
+    darkVeg: ['菠菜碎', '西兰花小朵', '胡萝卜丁'],
+    lightVeg: ['冬瓜碎', '白萝卜碎'],
+    fruit: ['苹果条', '香蕉段', '梨条'],
+    dairy: ['母乳或配方奶仍是重要营养来源'],
+    egg: ['蒸蛋羹', '炒蛋碎'],
+    iron: ['牛肉末', '猪肝泥'],
+    vegetable: ['西兰花小朵', '菠菜碎', '南瓜块'],
+    soy: ['嫩豆腐块', '豆腐脑'],
+  },
+  '1-2y': {
+    staple: ['软米饭', '小馄饨', '面条'],
+    protein: ['炒鸡蛋', '鸡肉丁', '肉末蒸蛋'],
+    meatFish: ['鸡肉丁', '清蒸鳕鱼', '牛肉末'],
+    darkVeg: ['菠菜炒蛋', '西兰花炒肉', '胡萝卜炒蛋'],
+    lightVeg: ['冬瓜肉末汤', '白萝卜排骨汤'],
+    fruit: ['苹果块', '香蕉', '梨块'],
+    dairy: ['每日适量奶类，根据宝宝饮食情况调整'],
+    egg: ['番茄炒蛋', '蒸蛋羹', '蛋花汤'],
+    iron: ['牛肉末', '猪肝炒菠菜'],
+    vegetable: ['西兰花炒肉', '菠菜炒蛋', '南瓜小米粥'],
+    soy: ['番茄豆腐', '鱼肉豆腐羹'],
+  },
+  '2-3y': {
+    staple: ['米饭', '馒头', '饺子'],
+    protein: ['炒鸡蛋', '红烧肉末', '清蒸鱼'],
+    meatFish: ['宫保鸡丁', '清蒸鲈鱼', '红烧牛肉'],
+    darkVeg: ['蒜蓉西兰花', '菠菜炒蛋', '胡萝卜炒肉丝'],
+    lightVeg: ['冬瓜排骨汤', '白萝卜炖肉', '清炒西葫芦'],
+    fruit: ['苹果', '香蕉', '橙子', '蓝莓'],
+    dairy: ['每日适量奶类或酸奶，保持钙摄入'],
+    egg: ['番茄炒蛋', '蛋花汤', '蒸蛋羹'],
+    iron: ['牛肉炖土豆', '猪肝炒洋葱'],
+    vegetable: ['清炒西兰花', '菠菜蛋花汤', '南瓜蒸排骨'],
+    soy: ['家常豆腐', '豆腐鱼汤'],
+  },
+  '3-5y': {
+    staple: ['米饭', '面条', '饺子', '包子'],
+    protein: ['番茄炒蛋', '红烧鸡翅', '清蒸鱼块'],
+    meatFish: ['糖醋里脊', '清蒸鲈鱼', '土豆炖牛肉'],
+    darkVeg: ['蒜蓉西兰花', '菠菜蛋花汤', '胡萝卜炒肉片'],
+    lightVeg: ['冬瓜排骨汤', '白萝卜炖牛腩', '蚝油生菜'],
+    fruit: ['苹果', '香蕉', '橙子', '草莓', '蓝莓'],
+    dairy: ['每日适量奶类，培养良好饮食习惯'],
+    egg: ['番茄炒蛋', '虾仁蒸蛋', '蛋花汤'],
+    iron: ['牛肉炒洋葱', '猪肝炒木耳'],
+    vegetable: ['清炒时蔬', '菠菜拌粉丝', '南瓜小米粥'],
+    soy: ['麻婆豆腐（微辣或不辣）', '鲫鱼豆腐汤'],
+  },
+};
+
+// 食材丰富建议描述文案（按年龄段）
+export function getSupplementDescription(age: AgeGroup): string {
+  switch (age) {
+    case '6-8m':
+      return '帮助宝宝逐步尝试不同食材，观察接受情况';
+    case '9-11m':
+      return '丰富食材种类，同时练习不同食物质地';
+    case '1-2y':
+      return '丰富家庭餐搭配，帮助宝宝建立均衡饮食习惯';
+    default:
+      return '丰富家庭餐搭配，培养多样化饮食习惯';
+  }
+}
+
+export function getSupplementFoods(key: string, age: AgeGroup): string[] {
+  const ageFoods = SUPPLEMENT_FOODS_BY_AGE[age];
+  if (!ageFoods) return [];
+  return ageFoods[key] || [];
 }
 
 function buildDaySummary(
