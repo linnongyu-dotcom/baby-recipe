@@ -25,9 +25,8 @@ jobs:
         run: npm run build
 
       - name: Deploy to CloudBase
-        uses: TencentCloudBase/cloudbase-action@v2
-        with:
-          secretId: ${{ secrets.TCB_SECRET_ID }}
-          secretKey: ${{ secrets.TCB_SECRET_KEY }}
-          envId: fanxiaobao-d9gpf87uvf3323ae7
-          staticSrcPath: dist
+        env:
+          TENCENTCLOUD_SECRET_ID: ${{ secrets.TCB_SECRET_ID }}
+          TENCENTCLOUD_SECRET_KEY: ${{ secrets.TCB_SECRET_KEY }}
+        run: |
+          npx tcb hosting deploy dist -e fanxiaobao-d9gpf87uvf3323ae7
