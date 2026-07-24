@@ -1,0 +1,23 @@
+{
+  "envId": "fanxiaobao-d9gpf87uvf3323ae7",
+  "version": "2.0",
+  "framework": {
+    "name": "vite",
+    "plugins": {
+      "client": {
+        "use": "@cloudbase/framework-plugin-website",
+        "inputs": {
+          "buildCommand": "npm run build",
+          "outputPath": "dist",
+          "cloudPath": "/",
+          "ignore": [".git", ".github", "node_modules", "test"],
+          "envVariables": {},
+          "websiteConfig": {
+            "index": "index.html",
+            "error": "index.html"
+          }
+        }
+      }
+    }
+  }
+}
