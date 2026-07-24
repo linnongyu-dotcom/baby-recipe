@@ -1,6 +1,6 @@
 import { Recipe, AgeGroup, MealType, ProteinSource, TextureLevel, AGE_TEXTURE_RULES, AGE_EGG_RULES, AGE_MEAL_STRUCTURE, NutritionTag } from '../types';
 import { lookupFoodCategory, isMeatOrEggLike, isVegetableCategory, FoodCategory } from './foodDictionary';
-import { isAge12Plus, is6to8m, is9to11m } from './ageRules';
+import { isAge12Plus, is6to8m, is9to11m, isOver2 } from './ageRules';
 
 // ============================================================
 // 食物形态推断
@@ -406,44 +406,142 @@ export function filterForbiddenDishes(dishes: Recipe[]): Recipe[] {
 // 营养标签派生
 // ============================================================
 
-/** 从食谱数据派生出营养标签 */
+/**
+ * 食物类型标签优先级（数字越小越优先保留）
+ * 蔬菜标签必须保留（用户需求：所有蔬菜都应有标签）
+ * 含铁食材/谷豆搭配等为次级标签，空间不足时可被裁剪
+ */
+const FOOD_TAG_PRIORITY: Record<NutritionTag, number> = {
+  '主食来源': 1,
+  '优质蛋白': 1,
+  '深色蔬菜': 1,   // 必须保留
+  '蔬菜来源': 1,   // 必须保留
+  '水果来源': 1,
+  '奶类来源': 1,
+  '含铁食材': 2,   // 次级，可裁剪
+  '谷豆搭配': 2,   // 次级，可裁剪
+  '蒸制': 0,
+  '炖煮': 0,
+  '少油烹饪': 0,
+  '易咀嚼': 0,
+};
+
+/** 从食谱数据派生出营养标签（1-3个） */
 export function deriveNutritionTags(recipe: Recipe): NutritionTag[] {
-  const tags: NutritionTag[] = [];
   const name = recipe.name;
+  const ingredientCats = recipe.mainIngredients.map(ing => lookupFoodCategory(ing));
 
-  // 主食类 → 主食补能
-  if (recipe.dishType === 'staple') tags.push('主食补能');
+  const hasStaple = recipe.dishType === 'staple' || ingredientCats.includes('staple');
+  const hasRedMeat = ingredientCats.includes('redMeat');
+  const hasPoultry = ingredientCats.includes('poultry');
+  const hasFish = ingredientCats.includes('fishSeafood');
+  const hasEgg = ingredientCats.includes('egg');
+  const hasTofu = ingredientCats.includes('soyProduct');
+  const hasProtein = hasRedMeat || hasPoultry || hasFish || hasEgg || hasTofu;
+  const hasDarkVeg = ingredientCats.includes('darkVeg');
+  const hasLightVeg = ingredientCats.includes('lightVeg');
+  const hasAnyVeg = hasDarkVeg || hasLightVeg;
+  const hasFruit = ingredientCats.includes('fruit');
+  const hasDairy = ingredientCats.includes('dairy');
 
-  // 蛋白质来源
-  const protein = inferProteinSource(recipe);
-  if (protein === 'fish' || protein === 'shrimp') tags.push('DHA来源');
-  if (protein === 'beef' || protein === 'pork') tags.push('补铁推荐');
-  if (protein === 'egg' || protein === 'chicken') tags.push('优质蛋白');
-  if (protein === 'tofu') {
-    tags.push('优质蛋白');
-    tags.push('补钙推荐');
+  // ============================================================
+  // 第一步：收集所有候选食物类型标签
+  // ============================================================
+  const candidates: NutritionTag[] = [];
+
+  if (hasStaple) candidates.push('主食来源');
+  if (hasProtein) candidates.push('优质蛋白');
+  if (hasRedMeat) candidates.push('含铁食材');
+
+  // 蔬菜（深色优先）
+  if (hasDarkVeg) {
+    candidates.push('深色蔬菜');
+  } else if (hasLightVeg) {
+    candidates.push('蔬菜来源');
   }
 
-  // 蔬菜类
-  const hasDarkVeg = recipe.mainIngredients.some(ing => {
-    const cat = lookupFoodCategory(ing);
-    return cat === 'darkVeg';
-  });
-  if (hasDarkVeg) tags.push('多彩蔬菜');
+  if (hasFruit) candidates.push('水果来源');
+  if (hasDairy) candidates.push('奶类来源');
+  if (hasStaple && hasTofu) candidates.push('谷豆搭配');
 
-  // 清淡易消化（粥、蒸、煮类）
-  if (name.includes('粥') || name.includes('蒸') || name.includes('煮') || name.includes('羹')) {
-    tags.push('清淡易消化');
+  // ============================================================
+  // 第二步：按优先级裁剪至最多3个
+  //   核心标签（优先级1）不可裁剪：主食来源/优质蛋白/蔬菜/水果/奶类
+  //   次级标签（优先级2）可裁剪：含铁食材/谷豆搭配
+  // ============================================================
+  let foodTags: NutritionTag[];
+  if (candidates.length <= 3) {
+    foodTags = candidates;
+  } else {
+    // 先保留所有优先级1的标签
+    const priority1 = candidates.filter(t => FOOD_TAG_PRIORITY[t] === 1);
+    const priority2 = candidates.filter(t => FOOD_TAG_PRIORITY[t] === 2);
+
+    if (priority1.length >= 3) {
+      // 核心标签已满3个，舍弃所有次级标签
+      foodTags = priority1.slice(0, 3);
+    } else {
+      // 核心标签不足3个，用次级标签填充
+      const slotsLeft = 3 - priority1.length;
+      foodTags = [...priority1, ...priority2.slice(0, slotsLeft)];
+    }
   }
 
-  // 维生素丰富（水果、深色蔬菜）
-  const hasFruitVeg = recipe.mainIngredients.some(ing => {
-    const cat = lookupFoodCategory(ing);
-    return cat === 'fruit' || cat === 'darkVeg';
-  });
-  if (hasFruitVeg && !tags.includes('多彩蔬菜')) tags.push('维生素丰富');
+  // ============================================================
+  // 第三步：兜底 - 没有任何食物标签时按 dishType 补充
+  // ============================================================
+  if (foodTags.length === 0) {
+    if (recipe.dishType === 'staple') {
+      foodTags.push('主食来源');
+    } else if (recipe.dishType === 'meat' || recipe.dishType === 'egg') {
+      foodTags.push('优质蛋白');
+    } else if (recipe.dishType === 'vegetable') {
+      foodTags.push('蔬菜来源');
+    } else if (recipe.dishType === 'soup') {
+      foodTags.push('优质蛋白');
+    } else if (recipe.dishType === 'dessert') {
+      foodTags.push('水果来源');
+    }
+  }
 
-  return tags;
+  // ============================================================
+  // 第四步：补充烹饪特点标签（辅助标签，填满余位）
+  // ============================================================
+  const tags = [...foodTags];
+
+  if (tags.length < 3) {
+    if (name.includes('蒸')) {
+      tags.push('蒸制');
+    } else if (name.includes('炖') || name.includes('煲')) {
+      tags.push('炖煮');
+    } else if (
+      (name.includes('清炒') || name.includes('白灼') || name.includes('凉拌') ||
+       name.includes('煮') || name.includes('焯')) &&
+      !name.includes('红烧') && !name.includes('炸')
+    ) {
+      tags.push('少油烹饪');
+    } else if (
+      recipe.textureLevel === 'puree' || recipe.textureLevel === 'paste' ||
+      name.includes('泥') || name.includes('糊') || name.includes('羹')
+    ) {
+      tags.push('易咀嚼');
+    }
+  }
+
+  // 烹饪标签不能是唯一标签：补充食物类型
+  if (tags.length === 1) {
+    const cookingTags: NutritionTag[] = ['蒸制', '炖煮', '少油烹饪', '易咀嚼'];
+    if (cookingTags.includes(tags[0])) {
+      const fallback = recipe.dishType === 'staple' ? '主食来源'
+        : recipe.dishType === 'vegetable' ? '蔬菜来源'
+        : recipe.dishType === 'dessert' ? '水果来源'
+        : recipe.dishType === 'soup' ? '优质蛋白'
+        : '优质蛋白';
+      tags.unshift(fallback as NutritionTag);
+    }
+  }
+
+  return tags.slice(0, 3);
 }
 
 // ============================================================
@@ -522,6 +620,100 @@ export function checkMealMandatory(dishes: Recipe[], age: AgeGroup, mealType: Me
 }
 
 // ============================================================
+// 蛋白质类型 & 易消化度
+// ============================================================
+
+/** 蛋白质类型（用于推荐排序） */
+export type ProteinType = 'red_meat' | 'poultry' | 'fish' | 'shrimp' | 'egg' | 'tofu' | 'none';
+
+/** 从食谱推导蛋白质类型 */
+export function getProteinType(recipe: Recipe): ProteinType {
+  const protein = inferProteinSource(recipe);
+  switch (protein) {
+    case 'beef':
+    case 'pork':
+      return 'red_meat';
+    case 'chicken':
+      return 'poultry';
+    case 'fish':
+      return 'fish';
+    case 'shrimp':
+      return 'shrimp';
+    case 'egg':
+      return 'egg';
+    case 'tofu':
+      return 'tofu';
+    default:
+      return 'none';
+  }
+}
+
+/** 易消化度 */
+export type Digestibility = 'easy' | 'medium' | 'heavy';
+
+/** 午餐蛋白质优先级（高到低）：红肉 > 鱼虾 > 蛋类 > 豆制品 > 禽肉 */
+const LUNCH_PROTEIN_PRIORITY: Record<ProteinType, number> = {
+  red_meat: 5,
+  fish: 4,
+  shrimp: 4,
+  egg: 3,
+  tofu: 2,
+  poultry: 1,
+  none: 0,
+};
+
+/** 晚餐蛋白质优先级（高到低）：蛋类 > 鱼类 > 豆制品 > 禽肉 > 红肉碎末 > 大块红肉 */
+const DINNER_PROTEIN_PRIORITY: Record<ProteinType, number> = {
+  egg: 5,
+  fish: 4,
+  tofu: 4,
+  shrimp: 3,
+  poultry: 3,
+  red_meat: 1, // 红肉优先级最低，但允许碎末
+  none: 0,
+};
+
+/** 按午餐蛋白质优先级排序 */
+export function sortByLunchProtein(recipes: Recipe[]): Recipe[] {
+  return [...recipes].sort((a, b) => {
+    const pa = LUNCH_PROTEIN_PRIORITY[getProteinType(a)];
+    const pb = LUNCH_PROTEIN_PRIORITY[getProteinType(b)];
+    return pb - pa;
+  });
+}
+
+/** 按晚餐蛋白质优先级排序 */
+export function sortByDinnerProtein(recipes: Recipe[]): Recipe[] {
+  return [...recipes].sort((a, b) => {
+    const pa = DINNER_PROTEIN_PRIORITY[getProteinType(a)];
+    const pb = DINNER_PROTEIN_PRIORITY[getProteinType(b)];
+    return pb - pa;
+  });
+}
+
+/** 判断食谱是否易消化（晚餐优先） */
+export function isEasyDigest(recipe: Recipe): boolean {
+  const name = recipe.name;
+  // 蒸、煮、羹、粥类 → 易消化
+  if (name.includes('蒸') || name.includes('煮') || name.includes('羹') || name.includes('粥')) return true;
+  if (name.includes('清炒') || name.includes('清蒸')) return true;
+  if (recipe.dishType === 'soup') return true;
+  // 红烧、炸、煎、烤 → 不易消化
+  if (name.includes('红烧') || name.includes('炸') || name.includes('煎') || name.includes('烤') || name.includes('糖醋')) return false;
+  // 默认中等
+  return true;
+}
+
+/** 推断食谱的消化负担程度 */
+export function getDigestibility(recipe: Recipe): Digestibility {
+  if (isEasyDigest(recipe)) return 'easy';
+  const name = recipe.name;
+  if (name.includes('红烧') || name.includes('糖醋') || name.includes('焖')) return 'medium';
+  if (name.includes('炸') || name.includes('煎') || name.includes('烤')) return 'heavy';
+  return 'medium';
+}
+
+// ============================================================
 // 餐次分类展示分组（UI 用）
 // ============================================================
 
@@ -531,30 +723,269 @@ export interface MealCategoryGroup {
   vegetable: Recipe[];
   soup: Recipe[];
   fruit: Recipe[];
+  snack: Recipe[];
 }
 
 /** 将菜品按展示类别分组 */
 export function groupDishesByMealCategory(dishes: Recipe[]): MealCategoryGroup {
-  const groups: MealCategoryGroup = { staple: [], protein: [], vegetable: [], soup: [], fruit: [] };
+  const groups: MealCategoryGroup = { staple: [], protein: [], vegetable: [], soup: [], fruit: [], snack: [] };
 
   for (const dish of dishes) {
-    if (dish.dishType === 'staple') {
+    const foodType = inferFoodType(dish);
+    if (foodType === '主食') {
       groups.staple.push(dish);
-    } else if (dish.dishType === 'meat' || dish.dishType === 'egg') {
+    } else if (foodType === '蛋白质') {
       groups.protein.push(dish);
-    } else if (dish.dishType === 'soup') {
-      groups.soup.push(dish);
-    } else if (dish.dishType === 'dessert') {
+    } else if (foodType === '蔬菜') {
+      groups.vegetable.push(dish);
+    } else if (foodType === '水果') {
       groups.fruit.push(dish);
-    } else if (dish.dishType === 'vegetable') {
-      // 如果素菜含蛋，归为蛋白质；否则归为蔬菜
-      if (dish.mainIngredients.some(ing => lookupFoodCategory(ing) === 'egg')) {
-        groups.protein.push(dish);
-      } else {
-        groups.vegetable.push(dish);
-      }
+    } else if (foodType === '奶类' || foodType === '点心') {
+      groups.snack.push(dish);
+    } else {
+      groups.soup.push(dish);
     }
   }
 
   return groups;
+}
+
+// ============================================================
+// 食物营养类型与双主食检测
+// ============================================================
+
+/** 食物营养角色 */
+export type FoodType = '主食' | '蛋白质' | '蔬菜' | '水果' | '奶类' | '点心';
+
+/** 从食谱推导其核心营养角色 */
+export function inferFoodType(recipe: Recipe): FoodType {
+  // 甜品优先按 dishType 判断
+  if (recipe.dishType === 'dessert') return '点心';
+
+  // 按 dishType 推导（正餐中 dishType 为准，配料不影响分类）
+  if (recipe.dishType === 'staple') return '主食';
+  if (recipe.dishType === 'meat') return '蛋白质';
+  if (recipe.dishType === 'egg') return '蛋白质';
+  if (recipe.dishType === 'vegetable') return '蔬菜';
+
+  // 汤品：根据食材推导
+  if (recipe.dishType === 'soup') {
+    const cats = recipe.mainIngredients.map(ing => lookupFoodCategory(ing));
+    if (cats.some(c => isMeatOrEggLike(c))) return '蛋白质';
+    if (cats.some(c => isVegetableCategory(c))) return '蔬菜';
+    return '点心';
+  }
+
+  // 无明确 dishType 时，根据食材推导
+  const cats = recipe.mainIngredients.map(ing => lookupFoodCategory(ing));
+  if (cats.includes('fruit')) return '水果';
+  if (cats.includes('dairy')) return '奶类';
+  return '点心';
+}
+
+/** 判断一道菜是否在营养上属于“含大量碳水的主食”（即使 dishType 不是 staple） */
+export function hasStapleIngredients(recipe: Recipe): boolean {
+  // dishType 直接是主食
+  if (recipe.dishType === 'staple') return true;
+  // 食材中含有高碳水原料（面粉、土豆、红薯、米粉等）
+  return recipe.mainIngredients.some(ing => {
+    const cat = lookupFoodCategory(ing);
+    if (cat !== 'staple') return false;
+    // 谷物/薯类类食材 = 碳水来源
+    const carbIngredients = ['面粉', '土豆', '红薯', '紫薯', '玉米', '糯米', '糯米粉', '大米', '小米', '面条', '馒头', '面包'];
+    return carbIngredients.some(c => ing.includes(c));
+  });
+}
+
+/** 检测一餐中是否存在双主食 */
+export function detectDualStaples(dishes: Recipe[]): { isDualStaple: boolean; stapleDishes: Recipe[]; warning: string } {
+  const stapleDishes = dishes.filter(d => hasStapleIngredients(d));
+  if (stapleDishes.length < 2) return { isDualStaple: false, stapleDishes: [], warning: '' };
+
+  const names = stapleDishes.map(d => d.name);
+  return {
+    isDualStaple: true,
+    stapleDishes,
+    warning: `本餐主食较丰富（${names.join('、')}），建议减少一种主食，增加奶类或水果，让营养搭配更均衡。`,
+  };
+}
+
+// ============================================================
+// 综合营养结构检查（全年龄段）
+// ============================================================
+
+export interface CategoryStatus {
+  ok: boolean;
+  label: string;
+  detail: string;
+}
+
+export interface NutritionCheckResult {
+  /** 各分类状态 */
+  staple: CategoryStatus;
+  protein: CategoryStatus;
+  vegetable: CategoryStatus;
+  fruit: CategoryStatus;
+  dairy: CategoryStatus;
+  /** 是否整体均衡 */
+  isBalanced: boolean;
+  /** 双主食警告 */
+  dualStapleWarning: string;
+  /** 优化建议列表 */
+  suggestions: string[];
+  /** 年龄阶段提示 */
+  ageNote: string;
+}
+
+/** 综合营养结构检查 */
+export function checkNutritionStructure(
+  dishes: Recipe[],
+  age: AgeGroup,
+  mealType: MealType,
+  /** 当天已覆盖的分类集合（用于全天平衡判断） */
+  dailyCoveredCategories?: Set<FoodType>,
+): NutritionCheckResult {
+  const isBreakfast = mealType === 'breakfast';
+
+  // 收集本餐各类食物
+  const foodTypes = dishes.map(d => inferFoodType(d));
+  // 食材级别的补充覆盖：一道菜可能有多个营养角色（如秋葵蒸蛋=蛋白质+蔬菜）
+  const allIngredientCats = dishes.flatMap(d => d.mainIngredients.map(ing => lookupFoodCategory(ing)));
+  const hasVegIngredient = allIngredientCats.some(c => isVegetableCategory(c));
+  const hasFruitIngredient = allIngredientCats.includes('fruit');
+  const hasDairyIngredient = allIngredientCats.includes('dairy');
+
+  const hasStaple = foodTypes.includes('主食');
+  const hasProtein = foodTypes.includes('蛋白质');
+  const hasVegetable = foodTypes.includes('蔬菜') || hasVegIngredient;
+  const hasFruit = foodTypes.includes('水果') || hasFruitIngredient;
+  const hasDairy = foodTypes.includes('奶类') || hasDairyIngredient;
+
+  // 双主食检测
+  const dualStaple = detectDualStaples(dishes);
+
+  // ========================================================
+  // 6-8 月龄：不进行严格结构判断，关注食材尝试和铁来源
+  // ========================================================
+  if (is6to8m(age)) {
+    const hasIron = dishes.some(d =>
+      d.mainIngredients.some(ing => ['redMeat', 'egg'].includes(lookupFoodCategory(ing)))
+    );
+    const suggestions: string[] = [];
+    if (!hasIron) suggestions.push('建议安排含铁辅食（强化铁米粉或肉泥）');
+    if (foodTypes.length === 0) suggestions.push('今天给宝宝尝试新食材了吗？');
+
+    return {
+      staple: { ok: hasStaple, label: '主食', detail: hasStaple ? '有安排' : '可尝试' },
+      protein: { ok: hasIron, label: '铁/蛋白质', detail: hasIron ? '有安排' : '建议安排' },
+      vegetable: { ok: hasVegetable, label: '蔬菜', detail: hasVegetable ? '有尝试' : '可尝试' },
+      fruit: { ok: hasFruit, label: '水果', detail: hasFruit ? '有尝试' : '可尝试' },
+      dairy: { ok: true, label: '奶类', detail: '奶是主要营养来源' },
+      isBalanced: true,
+      dualStapleWarning: '',
+      suggestions,
+      ageNote: '6-8月龄宝宝仍以奶为主要营养来源，辅食重点是逐步尝试和建立饮食习惯。',
+    };
+  }
+
+  // ========================================================
+  // 9-11 月龄：检查主食+蛋白质+蔬菜，奶仍重要
+  // ========================================================
+  if (is9to11m(age)) {
+    const suggestions: string[] = [];
+    if (!hasStaple) suggestions.push('建议搭配主食（米粉、粥或软饭）');
+    if (!hasProtein) suggestions.push('建议添加蛋黄、肉末或鱼碎');
+    if (!hasVegetable) suggestions.push('建议搭配蔬菜');
+
+    return {
+      staple: { ok: hasStaple, label: '主食', detail: hasStaple ? '已满足' : '建议补充' },
+      protein: { ok: hasProtein, label: '蛋白质', detail: hasProtein ? '已满足' : '建议补充' },
+      vegetable: { ok: hasVegetable, label: '蔬菜', detail: hasVegetable ? '已满足' : '建议补充' },
+      fruit: { ok: hasFruit, label: '水果', detail: hasFruit ? '有安排' : '当天其他时间安排' },
+      dairy: { ok: true, label: '奶类', detail: '母乳/配方奶仍是重要营养来源' },
+      isBalanced: hasStaple && hasProtein && hasVegetable,
+      dualStapleWarning: '',
+      suggestions,
+      ageNote: '9-11月龄辅食逐渐丰富，从泥糊向碎末过渡。',
+    };
+  }
+
+  // ========================================================
+  // 1 岁以上：完整餐食结构检查
+  // ========================================================
+  const suggestions: string[] = [];
+
+  // 双主食警告
+  if (dualStaple.isDualStaple) {
+    suggestions.push(dualStaple.warning);
+  }
+
+  // 水果：全天平衡判断
+  let fruitOk = hasFruit;
+  let fruitDetail = '';
+  if (hasFruit) {
+    fruitDetail = '已安排';
+  } else if (dailyCoveredCategories?.has('水果')) {
+    fruitOk = true;
+    fruitDetail = '今天其他餐次已安排';
+  } else {
+    fruitDetail = '建议当天安排';
+    if (!isBreakfast) {
+      // 正餐不强制要求水果，建议加餐安排
+      fruitOk = true;
+    }
+  }
+
+  // 奶类：非必须每餐都包含
+  let dairyOk = hasDairy;
+  let dairyDetail = '';
+  if (hasDairy) {
+    dairyDetail = '已安排';
+  } else if (dailyCoveredCategories?.has('奶类')) {
+    dairyOk = true;
+    dairyDetail = '当天已覆盖';
+  } else {
+    dairyDetail = isBreakfast ? '建议早餐搭配奶制品' : '建议当天安排';
+    dairyOk = true; // 不强制每餐含奶
+  }
+
+  // 主食
+  if (!hasStaple) suggestions.push('建议搭配主食');
+  // 蛋白质
+  if (!hasProtein) suggestions.push('建议添加蛋白质（蛋/肉/鱼/豆腐）');
+  // 蔬菜
+  if (!hasVegetable) suggestions.push('建议搭配蔬菜');
+
+  // 早餐特别建议
+  if (isBreakfast) {
+    if (!hasDairy && !dailyCoveredCategories?.has('奶类')) {
+      suggestions.push('建议早餐搭配奶制品（牛奶/酸奶），补充钙质');
+    }
+    if (!fruitOk) {
+      suggestions.push('建议搭配水果，补充维生素');
+    }
+  }
+
+  // 整体均衡：主食+蛋白质+蔬菜齐全为均衡
+  const isBalanced = hasStaple && hasProtein && hasVegetable && !dualStaple.isDualStaple;
+
+  // 年龄段提示
+  let ageNote = '';
+  if (isOver2(age)) {
+    ageNote = '接近家庭餐，关注食物多样性与营养均衡。';
+  } else {
+    ageNote = '建立规律三餐习惯，逐步适应家庭饮食。';
+  }
+
+  return {
+    staple: { ok: hasStaple, label: '主食', detail: hasStaple ? '已满足' : '建议补充' },
+    protein: { ok: hasProtein, label: '蛋白质', detail: hasProtein ? '已满足' : '建议补充' },
+    vegetable: { ok: hasVegetable, label: '蔬菜', detail: hasVegetable ? '已满足' : '建议补充' },
+    fruit: { ok: fruitOk, label: '水果', detail: fruitDetail || (hasFruit ? '已安排' : '建议当天安排') },
+    dairy: { ok: dairyOk, label: '奶类', detail: dairyDetail || (hasDairy ? '已安排' : '建议当天安排') },
+    isBalanced,
+    dualStapleWarning: dualStaple.warning,
+    suggestions,
+    ageNote,
+  };
 }

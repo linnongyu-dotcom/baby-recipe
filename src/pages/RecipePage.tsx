@@ -14,9 +14,8 @@ import { DAYS_OF_WEEK, DAY_LABELS, DayOfWeek, AGE_GROUP_LABELS, AgeGroup, Weekly
 import { calcAge, getMealLabels, getMealIcons } from '@/utils/babyProfile';
 import { downloadRecipePDF } from '@/utils/pdfGenerator';
 import { encodeShareData, decodeShareData } from '@/utils/shareUtils';
-import { analyzeDayNutrition, analyzeWeekNutrition, generateSnacks, getSupplementFoods, getSupplementDescription } from '@/utils/nutritionEngine';
+import { analyzeDayNutrition, analyzeWeekNutrition, generateSnacks } from '@/utils/nutritionEngine';
 import { BRAND, BRAND_ASSETS, setPageTitle } from '@/config/brand';
-import { lookupFoodCategory } from '@/utils/foodDictionary';
 
 interface NutritionGuide {
   title: string;
@@ -333,11 +332,6 @@ export function RecipePage() {
     if (!displayPlan || !effectiveAgeGroup) return null;
     return analyzeDayNutrition(displayPlan[todayDay], effectiveAgeGroup);
   }, [displayPlan, todayDay, effectiveAgeGroup]);
-
-  const snackSuggestions = useMemo(() => {
-    if (!effectiveAgeGroup) return null;
-    return generateSnacks(effectiveAgeGroup).items;
-  }, [effectiveAgeGroup]);
 
   const weekNutrition = useMemo(() => {
     if (!displayPlan || !effectiveAgeGroup) return null;
@@ -755,35 +749,39 @@ export function RecipePage() {
           </motion.div>
         )}
 
-        {/* 加餐建议 */}
-        {displayPlan && snackSuggestions && snackSuggestions.length > 0 && !isTwoMeal && !isInfantFeeding && (
+        {/* 今日加餐建议 */}
+        {displayPlan && !isTwoMeal && !isInfantFeeding && effectiveAgeGroup && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.03 }}
+            transition={{ delay: 0.04 }}
             className="mb-6 bg-white rounded-2xl shadow-lg p-6"
           >
             <div className="flex items-center gap-2 mb-3">
               <span className="text-2xl">🍪</span>
-              <h2 className="text-xl font-semibold text-gray-800">加餐建议</h2>
+              <h2 className="text-xl font-semibold text-gray-800">今日加餐建议</h2>
               <span className="text-xs text-gray-400">两餐之间</span>
             </div>
             <div className="flex flex-wrap gap-3">
-              {snackSuggestions.map((snack, i) => (
-                <span
-                  key={i}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-50 text-purple-700 rounded-full text-sm"
-                >
-                  <span>{snack.icon}</span>
-                  <span className="text-xs text-purple-400">{snack.time}</span>
-                  <span>{snack.name}</span>
-                </span>
-              ))}
+              {(() => {
+                const todayIdx = DAYS_OF_WEEK.indexOf(todayDay);
+                const todaySnacks = generateSnacks(effectiveAgeGroup, todayIdx).items;
+                return todaySnacks.map((snack, i) => (
+                  <span
+                    key={i}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-50 text-purple-700 rounded-full text-sm"
+                  >
+                    <span>{snack.icon}</span>
+                    <span className="text-xs text-purple-400">{snack.time}</span>
+                    <span>{snack.name}</span>
+                  </span>
+                ));
+              })()}
             </div>
           </motion.div>
         )}
 
-        {/* 今日营养搭配（9-11m及以上） */}
+        {/* 今日饮食总结（9-11m及以上） */}
         {displayPlan && todayNutrition && !is6to8m && !isInfantFeeding && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -793,15 +791,13 @@ export function RecipePage() {
           >
             <div className="flex items-center gap-2 mb-4">
               <span className="text-2xl">🥗</span>
-              <h2 className="text-xl font-semibold text-gray-800">
-                今日营养搭配
-              </h2>
+              <h2 className="text-xl font-semibold text-gray-800">今日饮食总结</h2>
             </div>
 
-            {/* 已包含 */}
+            {/* ✅ 今日营养覆盖 */}
             {todayNutrition.covered.length > 0 && (
               <div className="mb-4">
-                <h3 className="text-sm font-semibold text-gray-600 mb-2">✅ 已包含</h3>
+                <h3 className="text-sm font-semibold text-gray-600 mb-2">✅ 今日已覆盖</h3>
                 <div className="flex flex-wrap gap-3">
                   {todayNutrition.covered.map((item) => (
                     <span
@@ -809,84 +805,22 @@ export function RecipePage() {
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-50 text-green-700 rounded-full text-sm"
                     >
                       <span>🟢</span>
-                      <span>{item.name}</span>
+                      <span>{item.label}</span>
                     </span>
                   ))}
                 </div>
               </div>
             )}
 
-            {/* 搭配亮点 */}
-            {todayNutrition.covered.length > 0 && (
+            {/* 📌 今日搭配评价 */}
+            {todayNutrition.todayEvaluation && (
               <div className="mb-4 p-4 bg-blue-50 rounded-xl">
-                <h3 className="text-sm font-semibold text-blue-600 mb-2">⭐ 今日搭配亮点</h3>
-                <div className="space-y-1.5">
-                  {(() => {
-                    // 从今日菜品中提取亮点描述
-                    const allDishes = [
-                      ...displayPlan[todayDay].breakfast.dishes,
-                      ...displayPlan[todayDay].lunch.dishes,
-                      ...displayPlan[todayDay].dinner.dishes,
-                    ];
-                    const highlights: string[] = [];
-                    const seen = new Set<string>();
-                    for (const dish of allDishes) {
-                      for (const ing of dish.mainIngredients) {
-                        if (seen.has(ing)) continue;
-                        seen.add(ing);
-                        const cat = lookupFoodCategory(ing);
-                        if (cat === 'staple') highlights.push(`${ing}提供碳水化合物能量`);
-                        else if (cat === 'egg') highlights.push(`${ing}提供优质蛋白和卵磷脂`);
-                        else if (cat === 'fishSeafood') highlights.push(`${ing}富含DHA，助力大脑发育`);
-                        else if (cat === 'redMeat' || cat === 'poultry') highlights.push(`${ing}提供优质蛋白和铁元素`);
-                        else if (cat === 'darkVeg') highlights.push(`${ing}提供维生素和膳食纤维`);
-                        else if (cat === 'lightVeg') highlights.push(`${ing}丰富蔬菜种类`);
-                        else if (cat === 'fruit') highlights.push(`${ing}增加水果摄入，补充维生素`);
-                        else if (cat === 'soyProduct') highlights.push(`${ing}补充植物蛋白`);
-                        if (highlights.length >= 4) break;
-                      }
-                      if (highlights.length >= 4) break;
-                    }
-                    if (highlights.length === 0) {
-                      return <p className="text-sm text-blue-600">今日辅食搭配合理，满足宝宝成长需要</p>;
-                    }
-                    return highlights.map((h, i) => (
-                      <p key={i} className="text-sm text-blue-600">{h}</p>
-                    ));
-                  })()}
-                </div>
+                <h3 className="text-sm font-semibold text-blue-600 mb-2">📌 今日搭配评价</h3>
+                <p className="text-sm text-blue-700 leading-relaxed">{todayNutrition.todayEvaluation}</p>
               </div>
             )}
 
-            {/* 食材丰富建议 */}
-             {(() => {
-                const visibleOptimization = is9to11m
-                  ? todayNutrition.optimization.filter(item => item.key !== 'dairy')
-                  : todayNutrition.optimization;
-                if (visibleOptimization.length === 0) return null;
-                return (
-                <div className="p-4 bg-purple-50 rounded-xl">
-                  <h3 className="text-sm font-semibold text-purple-600 mb-2">💡 食材丰富建议</h3>
-                  <p className="text-xs text-purple-500 mb-2">
-                    今日搭配已满足基础营养，{effectiveAgeGroup ? getSupplementDescription(effectiveAgeGroup) : '后续可尝试以下食材'}：
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {visibleOptimization.map((item) => {
-                      const foods = effectiveAgeGroup ? getSupplementFoods(item.key, effectiveAgeGroup) : [];
-                      return foods.map((food, i) => (
-                        <span
-                          key={`${item.key}-${i}`}
-                          className="px-2 py-1 bg-purple-100 text-purple-700 rounded-lg text-sm"
-                        >
-                          {food}
-                        </span>
-                      ));
-                    })}
-                  </div>
-                </div>
-                );
-              })()}
-
+            {/* 总结文案 */}
             {todayNutrition.summary && (
               <p className="mt-4 text-sm text-gray-400 italic">{todayNutrition.summary}</p>
             )}
@@ -1096,6 +1030,31 @@ export function RecipePage() {
                             </div>
                           </div>
                           )}
+
+                          {/* 当日加餐建议 */}
+                          {!isTwoMeal && !isInfantFeeding && effectiveAgeGroup && (
+                            <div className="mt-4 pt-3 border-t border-dashed border-purple-100">
+                              <div className="flex items-center gap-1.5 text-xs text-purple-500 mb-2">
+                                <span>🍪</span>
+                                <span>加餐建议</span>
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                {(() => {
+                                  const daySnacks = generateSnacks(effectiveAgeGroup, dayIndex).items;
+                                  return daySnacks.map((snack, i) => (
+                                    <span
+                                      key={i}
+                                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-purple-50 text-purple-600 rounded-full text-xs"
+                                    >
+                                      <span>{snack.icon}</span>
+                                      <span className="text-purple-400">{snack.time}</span>
+                                      <span>{snack.name}</span>
+                                    </span>
+                                  ));
+                                })()}
+                              </div>
+                            </div>
+                          )}
                         </motion.div>
                       );
                     })}
@@ -1107,27 +1066,55 @@ export function RecipePage() {
                         animate={{ opacity: 1, y: 0 }}
                         className="bg-white rounded-xl p-5 shadow-sm border-2 border-purple-100"
                       >
-                        <div className="flex items-center gap-2 mb-4">
+                        <div className="flex items-center gap-2 mb-2">
                           <span className="text-xl">📊</span>
                           <h2 className="text-lg font-semibold text-gray-800">本周营养概览</h2>
                         </div>
-                        <p className="text-xs text-gray-400 mb-4">
-                          🥗 本周共 <span className="text-green-600 font-medium">{weekNutrition.uniqueIngredients}</span> 种食材，搭配丰富多样
+
+                        {/* 汇总行 */}
+                        <p className="text-sm text-gray-600 mb-4">
+                          本周共 <span className="text-purple-600 font-semibold">{weekNutrition.uniqueIngredients}</span> 种食材，{weekNutrition.diversity}
                         </p>
-                        <div className="space-y-3">
+
+                        {/* 分类列表 */}
+                        <div className="space-y-1">
                           {weekNutrition.items.map((item) => (
-                            <div
-                              key={item.key}
-                              className="flex items-center justify-between px-4 py-2 bg-purple-50/50 rounded-xl"
-                            >
-                              <span className="text-sm text-gray-700 flex items-center gap-2">
-                                <span>{item.icon}</span>
-                                <span>{item.name}：</span>
-                                <span className="text-gray-800">
-                                  本周 {item.count} 次
-                                </span>
-                              </span>
-                              <span className="text-xs text-gray-400">{item.suggestion}</span>
+                            <div key={item.key}>
+                              {item.subItems ? (
+                                /* 分组项（动物性蛋白） */
+                                <div>
+                                  <div className="flex items-center justify-between px-3 py-2 rounded-lg">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-base">{item.icon}</span>
+                                      <span className="text-sm font-medium text-gray-800">{item.name}</span>
+                                    </div>
+                                    <span className="text-xs text-gray-400 max-w-[40%] text-right">{item.suggestion}</span>
+                                  </div>
+                                  {item.subItems.map(sub => (
+                                    <div
+                                      key={sub.key}
+                                      className="flex items-center justify-between pl-11 pr-3 py-1.5"
+                                    >
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-xs">{sub.icon}</span>
+                                        <span className="text-sm text-gray-600">{sub.name}</span>
+                                        <span className="text-xs text-purple-500 font-medium">{sub.display}</span>
+                                      </div>
+                                      <span className="text-xs text-gray-400 max-w-[40%] text-right">{sub.suggestion}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                /* 普通项 */
+                                <div className="flex items-center justify-between px-3 py-2 rounded-lg">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-base">{item.icon}</span>
+                                    <span className="text-sm font-medium text-gray-800">{item.name}</span>
+                                    <span className="text-xs text-purple-500 font-medium">{item.display}</span>
+                                  </div>
+                                  <span className="text-xs text-gray-400 max-w-[40%] text-right">{item.suggestion}</span>
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>

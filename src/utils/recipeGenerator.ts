@@ -14,8 +14,13 @@ import {
   getMealDishLimit,
   getRecipeTexture,
   checkMealMandatory,
+  hasStapleIngredients,
+  getProteinType,
+  sortByLunchProtein,
+  sortByDinnerProtein,
+  isEasyDigest,
+  Digestibility,
 } from './mealValidator';
-import { AGE_MEAL_STRUCTURE } from '../types';
 
 // 根据用户设置生成一周食谱
 export function generateWeeklyPlan(settings: UserSettings, customRecipes: Recipe[] = []): WeeklyPlan {
@@ -271,12 +276,6 @@ function createDayPlan(
   }
 
   const dayPlan = { breakfast, lunch, dinner };
-
-  // 9-11 月龄：营养覆盖补齐，确保蛋类、肉鱼禽、深色蔬菜、水果每日覆盖
-  if (age === '9-11m') {
-    ensureBabyDailyCoverage(dayPlan, availableRecipes, weekUsedIds);
-  }
-
   return dayPlan;
 }
 
@@ -291,11 +290,10 @@ function createSimpleBabyMeal(
     ...availableRecipes.meat,
     ...availableRecipes.egg,
   ];
-  // 其他类：主食、蔬菜、水果
+  // 其他类：主食、蔬菜（甜品已移除，统一由加餐建议提供）
   const otherPool = [
     ...availableRecipes.staple,
     ...availableRecipes.vegetable,
-    ...availableRecipes.dessert,
   ];
 
   // 合并并过滤已使用的
@@ -374,52 +372,6 @@ function createCompositeMeal(
   return { dishes: [] };
 }
 
-// 为 9-11 月龄日计划做营养覆盖补齐
-// 复合主食已含蛋白和蔬菜，仅需补充水果
-function ensureBabyDailyCoverage(
-  dayPlan: DayPlan,
-  availableRecipes: Record<DishType, Recipe[]>,
-  weekUsedIds: Set<string>,
-): void {
-  const allDishes = [
-    ...dayPlan.breakfast.dishes,
-    ...dayPlan.lunch.dishes,
-    ...dayPlan.dinner.dishes,
-  ];
-
-  // 检测是否已覆盖水果
-  const coveredCats = new Set<FoodCategory>();
-  for (const dish of allDishes) {
-    for (const ing of dish.mainIngredients) {
-      coveredCats.add(lookupFoodCategory(ing));
-    }
-  }
-
-  // 仅补充水果，不补独立肉/菜（复合主食已含）
-  if (!coveredCats.has('fruit')) {
-    const pool = [
-      ...(availableRecipes.dessert || []),
-      ...(availableRecipes.vegetable || []),
-    ].filter(r => {
-      // 只选水果类食谱
-      return r.mainIngredients.some(ing => lookupFoodCategory(ing) === 'fruit');
-    });
-
-    const filtered = pool.filter(r => !weekUsedIds.has(r.id));
-    const recipe = pickWeightedRecipe(filtered.length > 0 ? filtered : pool);
-    if (recipe) {
-      weekUsedIds.add(recipe.id);
-      // 添加到菜品较少的餐次
-      const bfCount = dayPlan.breakfast.dishes.length;
-      const luCount = dayPlan.lunch.dishes.length;
-      const targetMeal = bfCount <= luCount ? dayPlan.breakfast : dayPlan.lunch;
-      if (!targetMeal.dishes.some(d => d.id === recipe.id)) {
-        targetMeal.dishes.push(recipe);
-      }
-    }
-  }
-}
-
 // 收集一周中某分类出现的次数
 function countCategoryInWeek(plan: WeeklyPlan, category: FoodCategory): number {
   let count = 0;
@@ -431,6 +383,28 @@ function countCategoryInWeek(plan: WeeklyPlan, category: FoodCategory): number {
       ...dayPlan.dinner.dishes,
     ];
     if (allDishes.some(d => d.mainIngredients.some(ing => lookupFoodCategory(ing) === category))) {
+      count++;
+    }
+  }
+  return count;
+}
+
+/** 统计一周中有蔬菜（深色或浅色）的天数 */
+function countVegDaysInWeek(plan: WeeklyPlan): number {
+  let count = 0;
+  for (const day of DAYS_OF_WEEK) {
+    const dayPlan = plan[day];
+    const allDishes = [
+      ...dayPlan.breakfast.dishes,
+      ...dayPlan.lunch.dishes,
+      ...dayPlan.dinner.dishes,
+    ];
+    if (allDishes.some(d =>
+      d.mainIngredients.some(ing => {
+        const cat = lookupFoodCategory(ing);
+        return cat === 'darkVeg' || cat === 'lightVeg';
+      })
+    )) {
       count++;
     }
   }
@@ -488,18 +462,45 @@ function ensureWeeklyCoverage(
   const protectedCategories = new Set<FoodCategory>();
 
   for (const check of rule.weeklyChecks) {
-    const currentCount = countCategoryInWeek(plan, check.category);
+    // 蔬菜：统计深色+浅色蔬菜的总覆盖天数
+    const currentCount = check.key === 'vegetable'
+      ? countVegDaysInWeek(plan)
+      : countCategoryInWeek(plan, check.category);
     const target = check.dailyTarget;
+
+    // 水果和奶制品已由加餐建议覆盖，不在正餐中补齐
+    if (check.key === 'fruit' || check.key === 'dairy') {
+      protectedCategories.add(check.category);
+      continue;
+    }
+
+    // 蔬菜：同时保护深浅蔬菜
+    if (check.key === 'vegetable') {
+      protectedCategories.add('darkVeg');
+      protectedCategories.add('lightVeg');
+    }
 
     // 已达到目标，跳过
     if (currentCount >= target) {
-      protectedCategories.add(check.category);
+      if (check.key !== 'vegetable') {
+        protectedCategories.add(check.category);
+      }
       continue;
     }
 
     // 需要补齐的缺口
     const gap = target - currentCount;
-    const candidates = findRecipesForCategory(availableRecipes, check.category, weekUsedIds);
+
+    // 蔬菜：合并深浅蔬菜候选
+    let candidates: Recipe[];
+    if (check.key === 'vegetable') {
+      candidates = [
+        ...findRecipesForCategory(availableRecipes, 'darkVeg', weekUsedIds),
+        ...findRecipesForCategory(availableRecipes, 'lightVeg', weekUsedIds),
+      ];
+    } else {
+      candidates = findRecipesForCategory(availableRecipes, check.category, weekUsedIds);
+    }
     if (candidates.length === 0) continue;
 
     let filled = 0;
@@ -507,12 +508,30 @@ function ensureWeeklyCoverage(
     for (const recipe of candidates) {
       if (filled >= gap) break;
 
-      const missingDay = findDayMissingCategory(plan, check.category);
+      // 蔬菜：查找缺少任何蔬菜的天数
+      let missingDay: DayOfWeek | null;
+      if (check.key === 'vegetable') {
+        const shuffled = [...DAYS_OF_WEEK].sort(() => Math.random() - 0.5);
+        missingDay = shuffled.find(day => {
+          const dp = plan[day];
+          const allDishes = [...dp.breakfast.dishes, ...dp.lunch.dishes, ...dp.dinner.dishes];
+          return !allDishes.some(d =>
+            d.mainIngredients.some(ing => {
+              const cat = lookupFoodCategory(ing);
+              return cat === 'darkVeg' || cat === 'lightVeg';
+            })
+          );
+        }) || null;
+      } else {
+        missingDay = findDayMissingCategory(plan, check.category);
+      }
       if (!missingDay) break;
 
       const dayPlan = plan[missingDay];
 
       if (age === '6-8m') {
+        // 甜品/点心不替换到主餐
+        if (recipe.dishType === 'dessert') continue;
         const meals: ('breakfast' | 'lunch')[] = ['breakfast', 'lunch'];
         for (const mealType of meals) {
           if (dayPlan[mealType].dishes.length > 0) {
@@ -545,6 +564,8 @@ function ensureWeeklyCoverage(
         }
         // 如果无法替换（无安全替换位置或候选不是主食），追加一道菜
         if (!replaced) {
+          // 甜品/点心不追加到主餐
+          if (recipe.dishType === 'dessert') continue;
           const targetMeal = dayPlan.breakfast.dishes.length <= dayPlan.lunch.dishes.length
             ? dayPlan.breakfast : dayPlan.lunch;
           if (!targetMeal.dishes.some(d => d.id === recipe.id)) {
@@ -559,6 +580,8 @@ function ensureWeeklyCoverage(
         }
       } else {
         // 1 岁以上：追加菜品，遵循家庭餐结构规则
+        // 甜品/点心不追加到午晚餐（应放在加餐）
+        if (recipe.dishType === 'dessert') continue;
         const targetMeal = dayPlan.lunch.dishes.length <= dayPlan.dinner.dishes.length
           ? dayPlan.lunch : dayPlan.dinner;
         if (!targetMeal.dishes.some(d => d.id === recipe.id)) {
@@ -736,6 +759,11 @@ function createFamilyMealPlan(
     staplePool = staplePool.filter(r => !r.name.includes('粥'));
   }
 
+  // 1岁以上：排除蛋黄类主食（如蛋黄蔬菜面、蛋黄面条、蛋黄粥），全蛋时代不应单吃蛋黄
+  if (isAge12Plus(babyAge)) {
+    staplePool = staplePool.filter(r => !isYolkOnlyRecipe(r));
+  }
+
   // ========== 步骤1：选主食 × 1 ==========
   const stapleRecipe = pickWeightedRecipe(staplePool.length > 0 ? staplePool : pool.staple);
   const selected: Recipe[] = [];
@@ -753,24 +781,26 @@ function createFamilyMealPlan(
 
   // 带汤水主食不配汤、不配银耳羹
   const filteredSoupPool = stapleIsSoupy ? [] : pool.soup;
-  const filteredDessertPool = stapleIsSoupy
-    ? pool.dessert.filter(r => !r.name.includes('银耳') && !r.name.includes('羹'))
-    : pool.dessert;
 
-  // ========== 步骤2：选蛋白质 × 1 ==========
+  // ========== 步骤2：选蛋白质 × 1（按餐次适配） ==========
+  // 辅助：过滤掉含主食食材的蛋白质候选（避免双主食，如面条+鸡蛋饼）
+  const filterNonStaple = (recipes: Recipe[]): Recipe[] =>
+    recipes.filter(r => !hasStapleIngredients(r));
+
   if (isBreakfast) {
+    // 早餐蛋白质：蛋类优先 → 肉类 → 含蛋白汤 → 豆制品
     if (!stapleHasProtein) {
-      // 早餐蛋白质：蛋类 → 肉类 → 含蛋白汤 → 原始池兜底
-      let proteinRecipe = pickWeightedRecipe(pool.egg.filter(r => !r.name.includes('蛋黄')));
-      if (!proteinRecipe) proteinRecipe = pickWeightedRecipe(pool.meat);
-      if (!proteinRecipe) proteinRecipe = pickWeightedRecipe(filteredSoupPool.filter(r => inferProteinSource(r) !== 'none'));
-      // 兜底：从原始可用池无条件选
+      let proteinPools = sortByLunchProtein(filterNonStaple(pool.egg.filter(r => !r.name.includes('蛋黄'))));
+      if (proteinPools.length === 0) proteinPools = sortByLunchProtein(pool.meat);
+      if (proteinPools.length === 0) proteinPools = filteredSoupPool.filter(r => inferProteinSource(r) !== 'none');
+      let proteinRecipe = pickWeightedRecipe(proteinPools);
+      // 兜底
       if (!proteinRecipe) {
-        const fallback = [
+        const fallback = sortByLunchProtein([
           ...availableRecipes.egg.filter(r => !r.name.includes('蛋黄')),
           ...availableRecipes.meat,
           ...availableRecipes.soup.filter(r => inferProteinSource(r) !== 'none'),
-        ];
+        ]);
         proteinRecipe = pickWeightedRecipe(fallback);
       }
       if (proteinRecipe) {
@@ -778,24 +808,69 @@ function createFamilyMealPlan(
         usedIds.add(proteinRecipe.id);
       }
     }
-  } else {
-    // 午晚餐：如果主食已含蛋白质，跳过独立蛋白；否则选一种蛋白来源
+  } else if (mealType === 'lunch') {
+    // ===== 午餐：主食 + 优质蛋白 + 蔬菜（一天重点餐） =====
+    // 蛋白质优先级：红肉 > 鱼虾 > 蛋类 > 豆制品 > 禽肉
     if (!stapleHasProtein) {
-      let proteinPools: Recipe[] = [
+      // 构建蛋白质候选池，按午餐优先级排序
+      let proteinCandidates: Recipe[] = [
         ...pool.meat,
-        ...pool.egg.filter(r => !r.name.includes('蛋黄')),
+        ...filterNonStaple(pool.egg.filter(r => !r.name.includes('蛋黄'))),
         ...filteredSoupPool.filter(r => inferProteinSource(r) !== 'none'),
       ];
-      let proteinRecipe = pickWeightedRecipe(proteinPools);
+      proteinCandidates = sortByLunchProtein(proteinCandidates);
+      let proteinRecipe = pickWeightedRecipe(proteinCandidates);
+
       // 兜底：从原始可用池选
       if (!proteinRecipe) {
-        proteinPools = [
+        proteinCandidates = sortByLunchProtein([
           ...availableRecipes.meat,
           ...availableRecipes.egg.filter(r => !r.name.includes('蛋黄')),
           ...(stapleIsSoupy ? [] : availableRecipes.soup.filter(r => inferProteinSource(r) !== 'none')),
-        ];
-        proteinRecipe = pickWeightedRecipe(proteinPools);
+        ]);
+        proteinRecipe = pickWeightedRecipe(proteinCandidates);
       }
+
+      if (proteinRecipe) {
+        selected.push(proteinRecipe);
+        usedIds.add(proteinRecipe.id);
+      }
+    }
+    // 午餐必须强制有蛋白：如果主食含蛋白质但类型不好（如仅含蛋的面条），不跳过独立蛋白质
+    // 主食含蛋白且已经是红肉/鱼虾，则不需要额外补
+  } else {
+    // ===== 晚餐：主食 + 易消化蛋白质 + 蔬菜 =====
+    // 蛋白质优先级：蛋类 > 鱼类 > 豆制品 > 禽肉 > 红肉（仅碎末）
+    if (!stapleHasProtein) {
+      // 构建蛋白质候选池，按晚餐优先级排序，优先易消化
+      let proteinCandidates: Recipe[] = [
+        ...filterNonStaple(pool.egg.filter(r => !r.name.includes('蛋黄'))),
+        ...pool.meat.filter(r => isEasyDigest(r)),
+        ...filteredSoupPool.filter(r => inferProteinSource(r) !== 'none' && isEasyDigest(r)),
+      ];
+      proteinCandidates = sortByDinnerProtein(proteinCandidates);
+
+      // 补充：不太易消化但可接受的候选
+      if (proteinCandidates.length === 0) {
+        proteinCandidates = sortByDinnerProtein([
+          ...filterNonStaple(pool.egg.filter(r => !r.name.includes('蛋黄'))),
+          ...pool.meat,
+          ...filteredSoupPool.filter(r => inferProteinSource(r) !== 'none'),
+        ]);
+      }
+
+      let proteinRecipe = pickWeightedRecipe(proteinCandidates);
+
+      // 兜底：从原始可用池选（排除明显不适合晚餐的重口味）
+      if (!proteinRecipe) {
+        proteinCandidates = sortByDinnerProtein([
+          ...availableRecipes.egg.filter(r => !r.name.includes('蛋黄')),
+          ...availableRecipes.meat.filter(r => !r.name.includes('红烧') && !r.name.includes('炸')),
+          ...(stapleIsSoupy ? [] : availableRecipes.soup.filter(r => inferProteinSource(r) !== 'none' && !r.name.includes('红烧') && !r.name.includes('炸'))),
+        ]);
+        proteinRecipe = pickWeightedRecipe(proteinCandidates);
+      }
+
       if (proteinRecipe) {
         selected.push(proteinRecipe);
         usedIds.add(proteinRecipe.id);
@@ -805,11 +880,12 @@ function createFamilyMealPlan(
 
   // ========== 步骤3：选蔬菜 × 1-2 ==========
   const existingIds = new Set(selected.map(d => d.id));
+  const isDinner = mealType === 'dinner';
 
-  // 蔬菜候选池（素菜 + 含蔬菜的汤，排除已选的和不适合的）
+  // 蔬菜候选池：午餐含汤品，晚餐不含汤（汤品尽量安排在午餐）
   const vegPool = [
     ...pool.vegetable,
-    ...filteredSoupPool.filter(r => hasVegetables(r)),
+    ...(isDinner ? [] : filteredSoupPool.filter(r => hasVegetables(r))),
   ].filter(r => !existingIds.has(r.id));
 
   // 早餐最多选1个蔬菜/汤，午晚餐1-2个
@@ -819,11 +895,11 @@ function createFamilyMealPlan(
 
   for (let i = 0; i < needVegCount; i++) {
     let vegRecipe = pickWeightedRecipe(vegPool);
-    // 兜底：从原始可用池选蔬菜
+    // 兜底：从原始可用池选蔬菜（晚餐也不选汤）
     if (!vegRecipe) {
       const fallbackVeg = [
         ...availableRecipes.vegetable,
-        ...filteredSoupPool.filter(r => hasVegetables(r)),
+        ...(isDinner ? [] : filteredSoupPool.filter(r => hasVegetables(r))),
       ].filter(r => !existingIds.has(r.id));
       vegRecipe = pickWeightedRecipe(fallbackVeg);
     }
@@ -833,19 +909,6 @@ function createFamilyMealPlan(
       existingIds.add(vegRecipe.id);
       const idx = vegPool.indexOf(vegRecipe);
       if (idx > -1) vegPool.splice(idx, 1);
-    }
-  }
-
-  // ========== 步骤4：选水果（可选） ==========
-  const fruitProbability = isBreakfast ? 0.5 : 0.3;
-  if (Math.random() < fruitProbability) {
-    const fruitPool = filteredDessertPool.filter(
-      r => !existingIds.has(r.id) && r.mainIngredients.length > 0
-    );
-    const fruitRecipe = pickWeightedRecipe(fruitPool);
-    if (fruitRecipe) {
-      selected.push(fruitRecipe);
-      usedIds.add(fruitRecipe.id);
     }
   }
 

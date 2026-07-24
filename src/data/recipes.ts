@@ -1636,7 +1636,7 @@ export const recipes: Recipe[] = [
     category: '点心',
     nutrition: '紫薯富含花青素',
     mainIngredients: ['紫薯', '糯米粉'],
-    dishType: 'dessert',
+    dishType: 'staple',
   },
   {
     id: 'r133',

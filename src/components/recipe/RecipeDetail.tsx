@@ -1,6 +1,7 @@
-import { Recipe } from '@/types';
+import { Recipe, NUTRITION_TAG_ICONS } from '@/types';
 import { Heart } from 'lucide-react';
 import { useStore } from '@/store/useStore';
+import { deriveNutritionTags } from '@/utils/mealValidator';
 
 interface RecipeDetailProps {
   recipe: Recipe;
@@ -9,6 +10,7 @@ interface RecipeDetailProps {
 export function RecipeDetail({ recipe }: RecipeDetailProps) {
   const { favoriteIds, toggleFavorite } = useStore();
   const isFav = favoriteIds.includes(recipe.id);
+  const nutritionTags = deriveNutritionTags(recipe);
 
   return (
     <div className="space-y-6">
@@ -17,11 +19,12 @@ export function RecipeDetail({ recipe }: RecipeDetailProps) {
         <span className="px-3 py-1 bg-purple-100 text-purple-600 rounded-full text-sm">
           {recipe.category}
         </span>
-        {recipe.tags.map((tag) => (
+        {nutritionTags.map((tag) => (
           <span
             key={tag}
-            className="px-3 py-1 bg-purple-100 text-purple-600 rounded-full text-sm"
+            className="px-2 py-0.5 bg-purple-50 text-purple-600 rounded text-xs flex items-center gap-0.5"
           >
+            <span className="text-[10px]">{NUTRITION_TAG_ICONS[tag]}</span>
             {tag}
           </span>
         ))}

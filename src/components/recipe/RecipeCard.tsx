@@ -8,7 +8,7 @@ import { RecipeDetail } from './RecipeDetail';
 import { AddDishModal } from './AddDishModal';
 import { IngredientInspiration } from './IngredientInspiration';
 import { useStore } from '@/store/useStore';
-import { groupDishesByMealCategory, deriveNutritionTags, checkMealMandatory, MealMandatoryCheck } from '@/utils/mealValidator';
+import { deriveNutritionTags } from '@/utils/mealValidator';
 
 interface RecipeCardProps {
   mealPlan: MealPlan;
@@ -27,19 +27,10 @@ interface RecipeCardProps {
   mealEmoji?: string;
 }
 
-// 分类展示配置
-const CATEGORY_GROUPS = [
-  { key: 'staple', label: '主食', icon: '🍚', color: 'bg-amber-50 border-amber-200' },
-  { key: 'protein', label: '蛋白质', icon: '🥩', color: 'bg-red-50 border-red-200' },
-  { key: 'vegetable', label: '蔬菜', icon: '🥬', color: 'bg-green-50 border-green-200' },
-  { key: 'soup', label: '汤品', icon: '🍲', color: 'bg-blue-50 border-blue-200' },
-  { key: 'fruit', label: '水果', icon: '🍎', color: 'bg-orange-50 border-orange-200' },
-] as const;
-
 export function RecipeCard({
   mealPlan,
   mealType,
-  ageGroup,
+  ageGroup: _ageGroup,
   onRefresh,
   onReplaceDish,
   onRemoveDish,
@@ -59,14 +50,6 @@ export function RecipeCard({
 
   const mealIcon = mealEmoji || (mealType === 'breakfast' ? '🌅' : mealType === 'lunch' ? '☀️' : '🌙');
   const mealLabel = mealTitle || (mealType === 'breakfast' ? '早餐' : mealType === 'lunch' ? '午餐' : '晚餐');
-
-  // 按展示类别分组
-  const categoryGroups = groupDishesByMealCategory(mealPlan.dishes);
-
-  // 必选项检查（1岁以上）
-  const mandatoryCheck: MealMandatoryCheck | null = ageGroup
-    ? checkMealMandatory(mealPlan.dishes, ageGroup, mealType)
-    : null;
 
   const handleViewDetail = (recipe: Recipe) => {
     setSelectedRecipe(recipe);
@@ -107,17 +90,9 @@ export function RecipeCard({
           )}
         </div>
 
-        {/* 菜品列表（按类别分组展示） */}
-        <div className="space-y-3 mb-4">
-          {CATEGORY_GROUPS.filter(g => categoryGroups[g.key].length > 0).map((group) => (
-            <div key={group.key} className="space-y-1.5">
-              {/* 分类标签 */}
-              <div className="flex items-center gap-1.5 px-1">
-                <span className="text-sm">{group.icon}</span>
-                <span className="text-xs font-medium text-gray-500">{group.label}</span>
-              </div>
-              {/* 该类菜品 */}
-              {categoryGroups[group.key].map((recipe) => {
+        {/* 菜品列表 */}
+        <div className="space-y-1.5 mb-4">
+          {mealPlan.dishes.map((recipe) => {
                 const isExpanded = expandedIds.has(recipe.id);
                 const globalIndex = mealPlan.dishes.indexOf(recipe);
                 const nutritionTags = deriveNutritionTags(recipe);
@@ -268,40 +243,7 @@ export function RecipeCard({
                   </div>
                 );
               })}
-            </div>
-          ))}
-        </div>
-
-        {/* 必选项营养检查（1岁以上每餐） */}
-        {mandatoryCheck && !mandatoryCheck.allOk && (
-          <div className="mb-4 p-3 bg-amber-50 rounded-xl border border-amber-200">
-            <p className="text-xs font-medium text-amber-700 mb-1.5">
-              ⚠️ 本餐缺少
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {mandatoryCheck.missingLabels.map(label => (
-                <span key={label} className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded text-xs">
-                  {label}
-                </span>
-              ))}
-            </div>
           </div>
-        )}
-        {mandatoryCheck?.allOk && (
-          <div className="mb-4 p-2 bg-green-50 rounded-lg border border-green-100 flex items-center gap-1.5 flex-wrap">
-            <span className="text-xs text-green-600">✅ 主食</span>
-            <span className="text-xs text-green-600">✅ 蛋白质</span>
-            {mandatoryCheck.vegetableOk && <span className="text-xs text-green-600">✅ 蔬菜</span>}
-          </div>
-        )}
-        {/* 早餐推荐建议（非必须） */}
-        {mandatoryCheck && mandatoryCheck.breakfastSuggestions.length > 0 && (
-          <div className="mb-4 p-2 bg-blue-50 rounded-lg border border-blue-100">
-            <p className="text-xs text-blue-600">
-              💡 {mandatoryCheck.breakfastSuggestions[0]}
-            </p>
-          </div>
-        )}
 
         {/* 操作按钮 */}
         {!readOnly && (
