@@ -4,12 +4,12 @@ on:
   push:
     branches: [main]
 
-permissions:
-  contents: read
-
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    env:
+      TCB_SECRET_ID: ${{ secrets.TCB_SECRET_ID }}
+      TCB_SECRET_KEY: ${{ secrets.TCB_SECRET_KEY }}
     steps:
       - uses: actions/checkout@v4
 
@@ -24,16 +24,5 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Check Secrets
-        env:
-          TCB_SECRET_ID: ${{ secrets.TCB_SECRET_ID }}
-          TCB_SECRET_KEY: ${{ secrets.TCB_SECRET_KEY }}
-        run: |
-          if [ -z "$TCB_SECRET_ID" ]; then echo "TCB_SECRET_ID 为空"; else echo "TCB_SECRET_ID 已设置 (长度: ${#TCB_SECRET_ID})"; fi
-          if [ -z "$TCB_SECRET_KEY" ]; then echo "TCB_SECRET_KEY 为空"; else echo "TCB_SECRET_KEY 已设置 (长度: ${#TCB_SECRET_KEY})"; fi
-
       - name: Deploy to CloudBase
-        env:
-          TCB_SECRET_ID: ${{ secrets.TCB_SECRET_ID }}
-          TCB_SECRET_KEY: ${{ secrets.TCB_SECRET_KEY }}
         run: node scripts/deploy-cloudbase.cjs
