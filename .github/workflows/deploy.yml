@@ -26,7 +26,6 @@ jobs:
 
       - name: Deploy to CloudBase
         env:
-          TENCENTCLOUD_SECRET_ID: ${{ secrets.TCB_SECRET_ID }}
-          TENCENTCLOUD_SECRET_KEY: ${{ secrets.TCB_SECRET_KEY }}
-        run: |
-          npx tcb hosting deploy dist -e fanxiaobao-d9gpf87uvf3323ae7
+          TCB_SECRET_ID: ${{ secrets.TCB_SECRET_ID }}
+          TCB_SECRET_KEY: ${{ secrets.TCB_SECRET_KEY }}
+        run: node scripts/deploy-cloudbase.cjs
