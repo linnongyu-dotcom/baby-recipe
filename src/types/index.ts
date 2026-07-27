@@ -107,18 +107,19 @@ export type ProteinSource = 'pork' | 'beef' | 'chicken' | 'fish' | 'shrimp' | 'e
 export type TextureLevel = 'puree' | 'paste' | 'chunky' | 'family';
 
 // 营养标签类型
-// 食物类型标签（每个食谱至少有一个）
-// 烹饪特点标签（辅助标签，不作为唯一标签）
+// 营养特点标签（每个食谱至少有一个）
+// 制作特点标签（辅助标签，不作为唯一标签）
 export type NutritionTag =
-  // 食物类型标签
+  // 营养特点标签
   | '主食来源' | '优质蛋白' | '含铁食材' | '蔬菜来源' | '深色蔬菜'
   | '水果来源' | '奶类来源' | '谷豆搭配'
-  // 烹饪特点标签
-  | '蒸制' | '炖煮' | '少油烹饪' | '易咀嚼';
+  | '富含钙' | '富含维生素C' | '膳食纤维'
+  // 制作特点标签
+  | '蒸制' | '炖煮' | '少油烹饪' | '易咀嚼' | '快手制作' | '易消化';
 
 // 营养标签图标映射
 export const NUTRITION_TAG_ICONS: Record<NutritionTag, string> = {
-  // 食物类型标签
+  // 营养特点标签
   '主食来源': '🌾',
   '优质蛋白': '🥩',
   '含铁食材': '🔴',
@@ -127,12 +128,29 @@ export const NUTRITION_TAG_ICONS: Record<NutritionTag, string> = {
   '水果来源': '🍎',
   '奶类来源': '🥛',
   '谷豆搭配': '🫘',
-  // 烹饪特点标签
+  '富含钙': '🦴',
+  '富含维生素C': '🍋',
+  '膳食纤维': '🌿',
+  // 制作特点标签
   '蒸制': '🍃',
   '炖煮': '🍲',
   '少油烹饪': '🌿',
   '易咀嚼': '👶',
+  '快手制作': '⚡',
+  '易消化': '🥣',
 };
+
+// 营养特点标签（用于详情页分组展示）
+export const NUTRITION_VALUE_TAGS: NutritionTag[] = [
+  '主食来源', '优质蛋白', '含铁食材', '蔬菜来源', '深色蔬菜',
+  '水果来源', '奶类来源', '谷豆搭配',
+  '富含钙', '富含维生素C', '膳食纤维',
+];
+
+// 制作特点标签（用于详情页分组展示）
+export const COOKING_METHOD_TAGS: NutritionTag[] = [
+  '蒸制', '炖煮', '少油烹饪', '易咀嚼', '快手制作', '易消化',
+];
 
 // 食物形态显示名称
 export const TEXTURE_LABELS: Record<TextureLevel, string> = {

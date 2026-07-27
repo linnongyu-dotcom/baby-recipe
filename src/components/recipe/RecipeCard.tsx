@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { RefreshCw, ArrowUpDown, Plus, Eye, X, Lightbulb, Heart } from 'lucide-react';
-import { Recipe, MealType, MealPlan, AgeGroup, NUTRITION_TAG_ICONS } from '@/types';
+import { Recipe, MealType, MealPlan, AgeGroup, NUTRITION_TAG_ICONS, NUTRITION_VALUE_TAGS, COOKING_METHOD_TAGS } from '@/types';
 import { Card } from '@/components/common/Card';
 import { Modal } from '@/components/common/Modal';
 import { RecipeDetail } from './RecipeDetail';
@@ -95,7 +95,9 @@ export function RecipeCard({
           {mealPlan.dishes.map((recipe) => {
                 const isExpanded = expandedIds.has(recipe.id);
                 const globalIndex = mealPlan.dishes.indexOf(recipe);
-                const nutritionTags = deriveNutritionTags(recipe);
+                const allTags = deriveNutritionTags(recipe);
+                const nutritionTags = allTags.filter(t => NUTRITION_VALUE_TAGS.includes(t)).slice(0, 3);
+                const cookingTags = allTags.filter(t => COOKING_METHOD_TAGS.includes(t)).slice(0, 2);
                 return (
                   <div
                     key={recipe.id}
@@ -110,17 +112,6 @@ export function RecipeCard({
                       <div className="flex-1 min-w-0">
                         <div className="font-medium text-gray-800 truncate">
                           {recipe.name}
-                        </div>
-                        <div className="flex flex-wrap gap-1 mt-0.5">
-                          {nutritionTags.slice(0, 3).map((tag) => (
-                            <span
-                              key={tag}
-                              className="px-1.5 py-0.5 bg-purple-50 text-purple-600 rounded text-xs flex items-center gap-0.5"
-                            >
-                              <span className="text-[10px]">{NUTRITION_TAG_ICONS[tag]}</span>
-                              {tag}
-                            </span>
-                          ))}
                         </div>
                       </div>
                       {!readOnly && (<>
@@ -203,6 +194,46 @@ export function RecipeCard({
                           className="border-t border-gray-200 bg-white"
                         >
                           <div className="p-3 space-y-3 text-sm">
+                            {/* 营养特点 */}
+                            {nutritionTags.length > 0 && (
+                              <div>
+                                <div className="font-medium text-gray-700 mb-1.5 flex items-center gap-1">
+                                  🥗 营养特点
+                                </div>
+                                <div className="flex flex-wrap gap-1">
+                                  {nutritionTags.map((tag) => (
+                                    <span
+                                      key={tag}
+                                      className="px-2 py-0.5 bg-purple-50 text-purple-700 rounded-full text-xs flex items-center gap-0.5"
+                                    >
+                                      <span>{NUTRITION_TAG_ICONS[tag]}</span>
+                                      {tag}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* 制作特点 */}
+                            {cookingTags.length > 0 && (
+                              <div>
+                                <div className="font-medium text-gray-700 mb-1.5 flex items-center gap-1">
+                                  👨‍🍳 制作特点
+                                </div>
+                                <div className="flex flex-wrap gap-1">
+                                  {cookingTags.map((tag) => (
+                                    <span
+                                      key={tag}
+                                      className="px-2 py-0.5 bg-green-50 text-green-700 rounded-full text-xs flex items-center gap-0.5"
+                                    >
+                                      <span>{NUTRITION_TAG_ICONS[tag]}</span>
+                                      {tag}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
                             {/* 食材 */}
                             <div>
                               <div className="font-medium text-gray-700 mb-1.5 flex items-center gap-1">

@@ -1,4 +1,4 @@
-import { Recipe, NUTRITION_TAG_ICONS } from '@/types';
+import { Recipe, NUTRITION_TAG_ICONS, NUTRITION_VALUE_TAGS, COOKING_METHOD_TAGS } from '@/types';
 import { Heart } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { deriveNutritionTags } from '@/utils/mealValidator';
@@ -10,7 +10,11 @@ interface RecipeDetailProps {
 export function RecipeDetail({ recipe }: RecipeDetailProps) {
   const { favoriteIds, toggleFavorite } = useStore();
   const isFav = favoriteIds.includes(recipe.id);
-  const nutritionTags = deriveNutritionTags(recipe);
+  const allTags = deriveNutritionTags(recipe);
+
+  // 分组：营养特点（最多3个）+ 制作特点（最多2个）
+  const nutritionTags = allTags.filter(t => NUTRITION_VALUE_TAGS.includes(t)).slice(0, 3);
+  const cookingTags = allTags.filter(t => COOKING_METHOD_TAGS.includes(t)).slice(0, 2);
 
   return (
     <div className="space-y-6">
@@ -19,15 +23,6 @@ export function RecipeDetail({ recipe }: RecipeDetailProps) {
         <span className="px-3 py-1 bg-purple-100 text-purple-600 rounded-full text-sm">
           {recipe.category}
         </span>
-        {nutritionTags.map((tag) => (
-          <span
-            key={tag}
-            className="px-2 py-0.5 bg-purple-50 text-purple-600 rounded text-xs flex items-center gap-0.5"
-          >
-            <span className="text-[10px]">{NUTRITION_TAG_ICONS[tag]}</span>
-            {tag}
-          </span>
-        ))}
         <button
           onClick={() => toggleFavorite(recipe.id)}
           className={`ml-auto p-2 rounded-full transition-colors ${
@@ -40,6 +35,48 @@ export function RecipeDetail({ recipe }: RecipeDetailProps) {
           <Heart className="w-5 h-5" fill={isFav ? 'currentColor' : 'none'} />
         </button>
       </div>
+
+      {/* 营养特点 */}
+      {nutritionTags.length > 0 && (
+        <div>
+          <h4 className="font-medium text-gray-800 mb-2 flex items-center gap-1.5">
+            <span className="text-base">🥗</span>
+            营养特点
+          </h4>
+          <div className="flex flex-wrap gap-1.5">
+            {nutritionTags.map((tag) => (
+              <span
+                key={tag}
+                className="px-2.5 py-1 bg-purple-50 text-purple-700 rounded-full text-sm flex items-center gap-1"
+              >
+                <span>{NUTRITION_TAG_ICONS[tag]}</span>
+                {tag}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 制作特点 */}
+      {cookingTags.length > 0 && (
+        <div>
+          <h4 className="font-medium text-gray-800 mb-2 flex items-center gap-1.5">
+            <span className="text-base">👨‍🍳</span>
+            制作特点
+          </h4>
+          <div className="flex flex-wrap gap-1.5">
+            {cookingTags.map((tag) => (
+              <span
+                key={tag}
+                className="px-2.5 py-1 bg-green-50 text-green-700 rounded-full text-sm flex items-center gap-1"
+              >
+                <span>{NUTRITION_TAG_ICONS[tag]}</span>
+                {tag}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* 营养价值 */}
       <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl p-4">

@@ -407,26 +407,33 @@ export function filterForbiddenDishes(dishes: Recipe[]): Recipe[] {
 // ============================================================
 
 /**
- * 食物类型标签优先级（数字越小越优先保留）
- * 蔬菜标签必须保留（用户需求：所有蔬菜都应有标签）
- * 含铁食材/谷豆搭配等为次级标签，空间不足时可被裁剪
+ * 标签分类：
+ *   营养特点标签（优先展示，最多3个）
+ *   制作特点标签（辅助展示，最多2个）
  */
 const FOOD_TAG_PRIORITY: Record<NutritionTag, number> = {
+  // 营养特点
   '主食来源': 1,
   '优质蛋白': 1,
-  '深色蔬菜': 1,   // 必须保留
-  '蔬菜来源': 1,   // 必须保留
+  '深色蔬菜': 1,
+  '蔬菜来源': 1,
   '水果来源': 1,
   '奶类来源': 1,
-  '含铁食材': 2,   // 次级，可裁剪
-  '谷豆搭配': 2,   // 次级，可裁剪
+  '含铁食材': 2,
+  '谷豆搭配': 2,
+  '富含钙': 2,
+  '富含维生素C': 2,
+  '膳食纤维': 2,
+  // 制作特点
   '蒸制': 0,
   '炖煮': 0,
   '少油烹饪': 0,
   '易咀嚼': 0,
+  '快手制作': 0,
+  '易消化': 0,
 };
 
-/** 从食谱数据派生出营养标签（1-3个） */
+/** 从食谱数据派生出营养标签（营养特点 + 制作特点） */
 export function deriveNutritionTags(recipe: Recipe): NutritionTag[] {
   const name = recipe.name;
   const ingredientCats = recipe.mainIngredients.map(ing => lookupFoodCategory(ing));
@@ -445,103 +452,104 @@ export function deriveNutritionTags(recipe: Recipe): NutritionTag[] {
   const hasDairy = ingredientCats.includes('dairy');
 
   // ============================================================
-  // 第一步：收集所有候选食物类型标签
+  // 第一步：派生营养特点标签
   // ============================================================
-  const candidates: NutritionTag[] = [];
+  const nutritionCandidates: NutritionTag[] = [];
 
-  if (hasStaple) candidates.push('主食来源');
-  if (hasProtein) candidates.push('优质蛋白');
-  if (hasRedMeat) candidates.push('含铁食材');
+  if (hasStaple) nutritionCandidates.push('主食来源');
+  if (hasProtein) nutritionCandidates.push('优质蛋白');
+  if (hasRedMeat) nutritionCandidates.push('含铁食材');
 
-  // 蔬菜（深色优先）
   if (hasDarkVeg) {
-    candidates.push('深色蔬菜');
+    nutritionCandidates.push('深色蔬菜');
   } else if (hasLightVeg) {
-    candidates.push('蔬菜来源');
+    nutritionCandidates.push('蔬菜来源');
   }
 
-  if (hasFruit) candidates.push('水果来源');
-  if (hasDairy) candidates.push('奶类来源');
-  if (hasStaple && hasTofu) candidates.push('谷豆搭配');
+  if (hasFruit) nutritionCandidates.push('水果来源');
+  if (hasDairy) nutritionCandidates.push('奶类来源');
+  if (hasStaple && hasTofu) nutritionCandidates.push('谷豆搭配');
 
-  // ============================================================
-  // 第二步：按优先级裁剪至最多3个
-  //   核心标签（优先级1）不可裁剪：主食来源/优质蛋白/蔬菜/水果/奶类
-  //   次级标签（优先级2）可裁剪：含铁食材/谷豆搭配
-  // ============================================================
-  let foodTags: NutritionTag[];
-  if (candidates.length <= 3) {
-    foodTags = candidates;
+  // 额外营养标签
+  if (hasDairy || recipe.mainIngredients.some(ing => ['豆腐', '虾皮', '芝麻'].includes(ing))) {
+    nutritionCandidates.push('富含钙');
+  }
+  if (recipe.mainIngredients.some(ing => ['番茄', '西兰花', '菠菜', '橙子', '猕猴桃', '青椒', '彩椒'].includes(ing))) {
+    nutritionCandidates.push('富含维生素C');
+  }
+  if (recipe.mainIngredients.some(ing => ['燕麦', '糙米', '玉米', '红薯', '紫薯', '芹菜', '香菇', '木耳'].includes(ing))) {
+    nutritionCandidates.push('膳食纤维');
+  }
+
+  // 裁剪营养标签至最多3个
+  let nutritionTags: NutritionTag[];
+  if (nutritionCandidates.length <= 3) {
+    nutritionTags = nutritionCandidates;
   } else {
-    // 先保留所有优先级1的标签
-    const priority1 = candidates.filter(t => FOOD_TAG_PRIORITY[t] === 1);
-    const priority2 = candidates.filter(t => FOOD_TAG_PRIORITY[t] === 2);
-
+    const priority1 = nutritionCandidates.filter(t => FOOD_TAG_PRIORITY[t] === 1);
+    const priority2 = nutritionCandidates.filter(t => FOOD_TAG_PRIORITY[t] === 2);
     if (priority1.length >= 3) {
-      // 核心标签已满3个，舍弃所有次级标签
-      foodTags = priority1.slice(0, 3);
+      nutritionTags = priority1.slice(0, 3);
     } else {
-      // 核心标签不足3个，用次级标签填充
       const slotsLeft = 3 - priority1.length;
-      foodTags = [...priority1, ...priority2.slice(0, slotsLeft)];
+      nutritionTags = [...priority1, ...priority2.slice(0, slotsLeft)];
     }
   }
 
-  // ============================================================
-  // 第三步：兜底 - 没有任何食物标签时按 dishType 补充
-  // ============================================================
-  if (foodTags.length === 0) {
+  // 兜底
+  if (nutritionTags.length === 0) {
     if (recipe.dishType === 'staple') {
-      foodTags.push('主食来源');
+      nutritionTags.push('主食来源');
     } else if (recipe.dishType === 'meat' || recipe.dishType === 'egg') {
-      foodTags.push('优质蛋白');
+      nutritionTags.push('优质蛋白');
     } else if (recipe.dishType === 'vegetable') {
-      foodTags.push('蔬菜来源');
+      nutritionTags.push('蔬菜来源');
     } else if (recipe.dishType === 'soup') {
-      foodTags.push('优质蛋白');
+      nutritionTags.push('优质蛋白');
     } else if (recipe.dishType === 'dessert') {
-      foodTags.push('水果来源');
+      nutritionTags.push('水果来源');
     }
   }
 
   // ============================================================
-  // 第四步：补充烹饪特点标签（辅助标签，填满余位）
+  // 第二步：派生制作特点标签（最多2个）
   // ============================================================
-  const tags = [...foodTags];
+  const cookingCandidates: NutritionTag[] = [];
 
-  if (tags.length < 3) {
-    if (name.includes('蒸')) {
-      tags.push('蒸制');
-    } else if (name.includes('炖') || name.includes('煲')) {
-      tags.push('炖煮');
-    } else if (
-      (name.includes('清炒') || name.includes('白灼') || name.includes('凉拌') ||
-       name.includes('煮') || name.includes('焯')) &&
-      !name.includes('红烧') && !name.includes('炸')
-    ) {
-      tags.push('少油烹饪');
-    } else if (
-      recipe.textureLevel === 'puree' || recipe.textureLevel === 'paste' ||
-      name.includes('泥') || name.includes('糊') || name.includes('羹')
-    ) {
-      tags.push('易咀嚼');
-    }
+  if (name.includes('蒸') || name.includes('清蒸')) {
+    cookingCandidates.push('蒸制');
+  } else if (name.includes('炖') || name.includes('煲')) {
+    cookingCandidates.push('炖煮');
   }
 
-  // 烹饪标签不能是唯一标签：补充食物类型
-  if (tags.length === 1) {
-    const cookingTags: NutritionTag[] = ['蒸制', '炖煮', '少油烹饪', '易咀嚼'];
-    if (cookingTags.includes(tags[0])) {
-      const fallback = recipe.dishType === 'staple' ? '主食来源'
-        : recipe.dishType === 'vegetable' ? '蔬菜来源'
-        : recipe.dishType === 'dessert' ? '水果来源'
-        : recipe.dishType === 'soup' ? '优质蛋白'
-        : '优质蛋白';
-      tags.unshift(fallback as NutritionTag);
-    }
+  // 易消化：泥/糊/羹/粥/煮类
+  if (
+    recipe.textureLevel === 'puree' || recipe.textureLevel === 'paste' ||
+    name.includes('泥') || name.includes('糊') || name.includes('羹') || name.includes('粥') ||
+    name.includes('煮')
+  ) {
+    cookingCandidates.push('易消化');
   }
 
-  return tags.slice(0, 3);
+  // 快手制作：步骤少、简单的食谱
+  if (recipe.steps.length <= 3 && !cookingCandidates.includes('蒸制') && !cookingCandidates.includes('炖煮')) {
+    cookingCandidates.push('快手制作');
+  }
+
+  // 少油烹饪
+  if (
+    (name.includes('清炒') || name.includes('白灼') || name.includes('凉拌') || name.includes('焯')) &&
+    !name.includes('红烧') && !name.includes('炸')
+  ) {
+    cookingCandidates.push('少油烹饪');
+  }
+
+  const cookingTags = cookingCandidates.slice(0, 2);
+
+  // ============================================================
+  // 第三步：合并返回
+  // ============================================================
+  return [...nutritionTags, ...cookingTags];
 }
 
 // ============================================================
