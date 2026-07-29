@@ -379,7 +379,7 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'baby-recipe-storage',
-      version: 39,
+      version: 40,
       migrate: (persistedState: any, version: number) => {
         if (version < 30) {
           return {
@@ -456,6 +456,13 @@ export const useStore = create<AppState>()(
               ...(persistedState?.settings || defaultSettings),
               babyAge: null,
             },
+          };
+        }
+        // v40: 三餐定位优化升级（一日饮食规划），强制重新生成食谱
+        if (version < 40) {
+          return {
+            ...persistedState,
+            weeklyPlan: null,
           };
         }
         return persistedState;

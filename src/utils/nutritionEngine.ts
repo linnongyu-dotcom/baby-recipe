@@ -1,4 +1,4 @@
-import { DayPlan, WeeklyPlan, DAYS_OF_WEEK, AgeGroup, getAgeStage } from '../types';
+import { DayPlan, WeeklyPlan, DAYS_OF_WEEK, AgeGroup, getAgeStage, MILK_RECOMMENDATIONS } from '../types';
 import { lookupFoodCategory, FoodCategory } from './foodDictionary';
 import { getAgeRule } from './ageRules';
 
@@ -449,6 +449,17 @@ export function getSupplementFoods(key: string, age: AgeGroup): string[] {
   const ageFoods = SUPPLEMENT_FOODS_BY_AGE[age];
   if (!ageFoods) return [];
   return ageFoods[key] || [];
+}
+
+/** 获取奶量提示文案（不参与三餐推荐，仅提示） */
+export function getMilkTip(age: AgeGroup): { amount: string; description: string; fullText: string } {
+  const info = MILK_RECOMMENDATIONS[age];
+  if (!info) return { amount: '', description: '', fullText: '请根据宝宝月龄合理安排奶制品摄入。' };
+  return {
+    amount: info.amount,
+    description: info.description,
+    fullText: `今日奶制品建议：${info.amount}/天。${info.description}。请结合宝宝实际饮奶情况安排。`,
+  };
 }
 
 export function analyzeWeekNutrition(weeklyPlan: WeeklyPlan, age: AgeGroup): WeekNutritionResult {

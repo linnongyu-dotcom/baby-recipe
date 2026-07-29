@@ -14,7 +14,7 @@ import { DAYS_OF_WEEK, DAY_LABELS, DayOfWeek, AGE_GROUP_LABELS, AgeGroup, Weekly
 import { calcAge, getMealLabels, getMealIcons } from '@/utils/babyProfile';
 import { downloadRecipePDF } from '@/utils/pdfGenerator';
 import { encodeShareData, decodeShareData } from '@/utils/shareUtils';
-import { analyzeDayNutrition, analyzeWeekNutrition, generateSnacks } from '@/utils/nutritionEngine';
+import { analyzeDayNutrition, analyzeWeekNutrition, generateSnacks, getMilkTip } from '@/utils/nutritionEngine';
 import { BRAND, BRAND_ASSETS, setPageTitle } from '@/config/brand';
 
 interface NutritionGuide {
@@ -874,6 +874,30 @@ export function RecipePage() {
                   </div>
                 ));
               })()}
+            </div>
+          </motion.div>
+        )}
+
+        {/* 今日奶制品建议（不强制安排，仅提示） */}
+        {displayPlan && !isTwoMeal && !isInfantFeeding && effectiveAgeGroup && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.06 }}
+            className="mb-6 bg-white rounded-2xl shadow-lg p-6"
+          >
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-2xl">🥛</span>
+              <h2 className="text-xl font-semibold text-gray-800">今日奶制品建议</h2>
+              <span className="text-xs text-gray-400">不参与三餐推荐</span>
+            </div>
+            <div className="p-4 bg-blue-50 rounded-xl">
+              <p className="text-sm text-blue-700 leading-relaxed">
+                {(() => {
+                  const milkTip = getMilkTip(effectiveAgeGroup);
+                  return milkTip.fullText;
+                })()}
+              </p>
             </div>
           </motion.div>
         )}

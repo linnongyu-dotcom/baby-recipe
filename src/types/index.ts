@@ -163,6 +163,19 @@ export const TEXTURE_LABELS: Record<TextureLevel, string> = {
 // 一餐中菜品的角色分类（用于结构校验）
 export type MealDishRole = 'staple' | 'protein' | 'vegetable' | 'fruit';
 
+// 食谱难度
+export type Difficulty = '简单' | '中等' | '复杂';
+
+// 食谱食物类型标签
+export interface FoodTypeLabel {
+  carbohydrate: boolean; // 含碳水（主食类）
+  protein: boolean;      // 含蛋白质（肉/蛋/鱼/豆）
+  vegetable: boolean;    // 含蔬菜
+}
+
+// 蔬菜颜色分类
+export type VegetableColor = '深色' | '浅色' | 'none';
+
 // 食谱类型
 export interface Recipe {
   id: string;
@@ -180,7 +193,15 @@ export interface Recipe {
   /** 在一餐结构中的角色（主食/蛋白质/蔬菜/水果），用于推荐过滤 */
   mealRole?: MealDishRole;
   /** 适合出现在哪些餐次（早/午/晚），不指定则不限 */
-  mealSuitable?: ('breakfast' | 'lunch' | 'dinner')[];
+  mealSuitable?: MealType[];
+  /** 制作难度 */
+  difficulty?: Difficulty;
+  /** 食物类型标签（含碳水/含蛋白/含蔬菜） */
+  foodType?: FoodTypeLabel;
+  /** 蛋白质来源细分 */
+  proteinSourceType?: '肉类' | '鱼类' | '虾类' | '蛋类' | '豆制品' | '禽肉' | 'none';
+  /** 蔬菜颜色分类（仅蔬菜类菜品有效） */
+  vegetableColor?: VegetableColor;
 }
 
 // 各年龄段允许的食物形态
@@ -240,6 +261,36 @@ export interface DayPlan {
   breakfast: MealPlan;
   lunch: MealPlan;
   dinner: MealPlan;
+}
+
+// ===== 奶量建议（不参与三餐推荐）=====
+
+// 各年龄段每日奶量建议
+export const MILK_RECOMMENDATIONS: Record<AgeGroup, { amount: string; description: string }> = {
+  '6-8m': { amount: '600-800ml', description: '母乳或配方奶仍是主要营养来源，辅食为辅' },
+  '9-11m': { amount: '500-600ml', description: '辅食比例逐步增加，奶量可适当减少' },
+  '1-2y': { amount: '400-500ml', description: '可引入纯牛奶、酸奶，逐步过渡到家庭饮食' },
+  '2-3y': { amount: '350-500ml', description: '奶制品作为钙质补充，培养良好习惯' },
+  '3-5y': { amount: '300-400ml', description: '每日适量奶类，保持钙摄入和良好饮食习惯' },
+};
+
+// ===== 全天营养检查结果 =====
+
+// 全天搭配检查结果
+export interface DayPlanCheckResult {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+  /** 主食检查：连续三餐同类型主食 */
+  stapleWarning?: string;
+  /** 核心食材重复 */
+  ingredientRepeat?: string[];
+  /** 蛋白质分布 */
+  proteinDistribution?: { ok: boolean; detail: string };
+  /** 蔬菜多样性 */
+  vegetableDiversity?: { ok: boolean; darkCount: number; lightCount: number; detail: string };
+  /** 奶量提示 */
+  milkTip: string;
 }
 
 // 用户设置

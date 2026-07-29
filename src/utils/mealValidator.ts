@@ -1,4 +1,4 @@
-import { Recipe, AgeGroup, MealType, ProteinSource, TextureLevel, AGE_TEXTURE_RULES, AGE_EGG_RULES, AGE_MEAL_STRUCTURE, NutritionTag } from '../types';
+import { Recipe, AgeGroup, MealType, ProteinSource, TextureLevel, AGE_TEXTURE_RULES, AGE_EGG_RULES, AGE_MEAL_STRUCTURE, NutritionTag, FoodTypeLabel, Difficulty, VegetableColor } from '../types';
 import { lookupFoodCategory, isMeatOrEggLike, isVegetableCategory, FoodCategory } from './foodDictionary';
 import { isAge12Plus, is6to8m, is9to11m, isOver2 } from './ageRules';
 
@@ -136,7 +136,18 @@ export function getMealDishLimit(age: AgeGroup, mealType: MealType): { min: numb
   // 1岁以下每餐只有1道菜（复合主食或单一辅食）
   if (is6to8m(age) || is9to11m(age)) return { min: 1, max: 1 };
 
-  return { min: structure.minTotalDishes, max: structure.maxTotalDishes };
+  // 1岁以上按餐次区分限制
+  switch (mealType) {
+    case 'breakfast':
+      // 早餐简洁：1-2道（主食+蛋白质）
+      return { min: 1, max: 2 };
+    case 'lunch':
+      // 午餐最完整：2-4道
+      return { min: structure.minTotalDishes, max: structure.maxTotalDishes };
+    case 'dinner':
+      // 晚餐清淡：2-3道
+      return { min: Math.min(structure.minTotalDishes, 2), max: Math.min(structure.maxTotalDishes, 3) };
+  }
 }
 
 // ============================================================
@@ -144,7 +155,7 @@ export function getMealDishLimit(age: AgeGroup, mealType: MealType): { min: numb
 // ============================================================
 
 /** 判断两个主食是否属于同一子类（导致重复） */
-function getStapleSubCategory(name: string): string {
+export function getStapleSubCategory(name: string): string {
   // 面食类
   if (name.includes('面') && !name.includes('面包')) return 'noodle';
   // 粥类
@@ -357,17 +368,20 @@ export function reduceProteinSources(dishes: Recipe[]): Recipe[] {
   });
 }
 
-/** 控制菜品数量，超出限制时优先移除甜品，其次移除汤品 */
+/** 控制菜品数量，超出限制时优先移除甜品，其次移除汤品，永不移除主食 */
 export function limitDishCount(dishes: Recipe[], maxCount: number): Recipe[] {
   const mainDishes = dishes.filter(d => d.dishType !== 'dessert');
-
   if (mainDishes.length <= maxCount) return dishes;
 
+  // 移除优先级：越小越先被移除（升序排列后取前maxCount个）
+  // staple=-1 永远排在最前面，永远不会被移除
   const removalPriority: Record<string, number> = {
+    staple: -1, // 主食永不移除
     dessert: 0,
     soup: 1,
-    vegetable: 2,
-    egg: 3,
+    egg: 2,
+    vegetable: 3,
+    meat: 4,
   };
 
   const sorted = [...dishes].sort((a, b) => {
@@ -996,4 +1010,134 @@ export function checkNutritionStructure(
     suggestions,
     ageNote,
   };
+}
+
+// ============================================================
+// 食谱属性推断（为新字段提供默认值，无需手动更新所有食谱）
+// ============================================================
+
+/** 推断 foodType 标签 */
+export function inferFoodTypeLabel(recipe: Recipe): FoodTypeLabel {
+  const cats = recipe.mainIngredients.map(ing => lookupFoodCategory(ing));
+
+  const carbohydrate =
+    recipe.dishType === 'staple' ||
+    cats.includes('staple') ||
+    recipe.mainIngredients.some(ing => ['面粉', '米粉', '土豆', '红薯', '紫薯', '玉米', '糯米'].includes(ing));
+
+  const protein =
+    recipe.dishType === 'meat' ||
+    recipe.dishType === 'egg' ||
+    cats.some(c => isMeatOrEggLike(c));
+
+  const vegetable =
+    recipe.dishType === 'vegetable' ||
+    cats.some(c => isVegetableCategory(c));
+
+  return { carbohydrate, protein, vegetable };
+}
+
+/** 推断制作难度 */
+export function inferDifficulty(recipe: Recipe): Difficulty {
+  const name = recipe.name;
+
+  // 复杂：多步骤、红烧、炖煮类
+  if (name.includes('红烧') || name.includes('糖醋') || name.includes('煲') || name.includes('焖')) {
+    return '复杂';
+  }
+
+  // 中等：炒菜、煎、烤
+  if (name.includes('炒') || name.includes('煎') || name.includes('烤') || name.includes('炸')) {
+    return '中等';
+  }
+
+  // 简单：蒸、煮、泥、糊、拌、羹、粥（优先于步骤数判断）
+  if (name.includes('蒸') || name.includes('煮') || name.includes('泥') ||
+      name.includes('糊') || name.includes('拌') || name.includes('羹') ||
+      name.includes('粥')) {
+    return '简单';
+  }
+
+  // 中等：步骤多的
+  if (recipe.steps.length >= 4) return '中等';
+
+  return recipe.steps.length <= 2 ? '简单' : '中等';
+}
+
+/** 推断餐次适配 */
+export function inferMealSuitable(recipe: Recipe): MealType[] {
+  const name = recipe.name;
+
+  // 早餐专属：粥、饼、馒头、蛋羹等
+  const breakfastOnly = [
+    '粥', '饼', '馒头', '花卷', '包子', '豆浆', '豆腐脑',
+    '蛋卷', '白煮蛋', '水煮蛋', '鸡蛋羹', '蒸蛋羹', '蒸蛋',
+    '南瓜饼', '紫薯饼', '山药糕', '小馒头',
+  ];
+  if (breakfastOnly.some(k => name.includes(k))) return ['breakfast'];
+
+  // 泥糊类只适合辅食初期（年龄限制已由年龄筛选处理），餐次不限
+  if (name.includes('泥') || name.includes('糊')) return ['breakfast', 'lunch', 'dinner'];
+
+  // 午晚餐不适合早餐的食物
+  const lunchDinnerOnly = [
+    '米饭', '炒饭', '红烧', '糖醋', '宫保',
+    '拌面', '炸酱', '凉面', '肉酱面', '牛肉面', '阳春面',
+    '鸡丝面', '肉丝面', '番茄面', '番茄鸡蛋面', '番茄牛肉面', '鸡丝凉面', '葱油拌面',
+  ];
+  if (lunchDinnerOnly.some(k => name.includes(k))) return ['lunch', 'dinner'];
+
+  // 默认所有餐次都适合
+  return ['breakfast', 'lunch', 'dinner'];
+}
+
+/** 推断蔬菜颜色 */
+export function inferVegetableColor(recipe: Recipe): VegetableColor {
+  if (recipe.vegetableColor) return recipe.vegetableColor;
+
+  const cats = recipe.mainIngredients.map(ing => lookupFoodCategory(ing));
+  if (cats.includes('darkVeg')) return '深色';
+  if (cats.includes('lightVeg')) return '浅色';
+  return 'none';
+}
+
+/** 推断蛋白质来源细分 */
+export function inferProteinSourceType(recipe: Recipe): '肉类' | '鱼类' | '虾类' | '蛋类' | '豆制品' | '禽肉' | 'none' {
+  if (recipe.proteinSourceType && recipe.proteinSourceType !== 'none') return recipe.proteinSourceType;
+
+  const cats = recipe.mainIngredients.map(ing => lookupFoodCategory(ing));
+  if (cats.includes('egg')) return '蛋类';
+  if (cats.includes('fishSeafood')) {
+    const hasShrimp = recipe.mainIngredients.some(ing => ing.includes('虾'));
+    return hasShrimp ? '虾类' : '鱼类';
+  }
+  if (cats.includes('redMeat')) return '肉类';
+  if (cats.includes('poultry')) return '禽肉';
+  if (cats.includes('soyProduct')) return '豆制品';
+  return 'none';
+}
+
+/** 从食谱获取或推断 mealSuitable */
+export function getMealSuitable(recipe: Recipe): MealType[] {
+  return recipe.mealSuitable || inferMealSuitable(recipe);
+}
+
+/** 从食谱获取或推断 foodType */
+export function getFoodType(recipe: Recipe): FoodTypeLabel {
+  return recipe.foodType || inferFoodTypeLabel(recipe);
+}
+
+/** 从食谱获取或推断 difficulty */
+export function getDifficulty(recipe: Recipe): Difficulty {
+  return recipe.difficulty || inferDifficulty(recipe);
+}
+
+/** 从食谱获取或推断 vegetableColor */
+export function getVegetableColor(recipe: Recipe): VegetableColor {
+  return recipe.vegetableColor || inferVegetableColor(recipe);
+}
+
+/** 从食谱获取或推断 proteinSourceType */
+export function getProteinSourceType(recipe: Recipe): '肉类' | '鱼类' | '虾类' | '蛋类' | '豆制品' | '禽肉' | 'none' {
+  return recipe.proteinSourceType || inferProteinSourceType(recipe);
 }
