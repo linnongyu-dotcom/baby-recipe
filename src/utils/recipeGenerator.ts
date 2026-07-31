@@ -16,9 +16,11 @@ import {
   checkMealMandatory,
   hasStapleIngredients,
   getProteinType,
+  ProteinType,
   sortByLunchProtein,
   sortByDinnerProtein,
   isEasyDigest,
+  getRepeatedProteinCategories,
   Digestibility,
 } from './mealValidator';
 
@@ -40,12 +42,401 @@ export function generateWeeklyPlan(settings: UserSettings, customRecipes: Recipe
   // 周营养目标保障：确保每周各类食物达到推荐次数
   if (settings.babyAge) {
     ensureWeeklyCoverage(plan, availableRecipes, settings.babyAge, weekUsedIds);
+    removeWeeklyProteinIngredientRepeats(plan, availableRecipes, settings.babyAge);
+    ensureLunchRedMeat(plan, availableRecipes, settings.babyAge);
+    removeDinnerRedMeatStacking(plan, availableRecipes);
+    removeSoupWithSoupyStaples(plan, availableRecipes);
+    ensureBreakfastProtein(plan, availableRecipes, settings.babyAge);
+    // 必须放在所有可能补菜的后处理之后，否则补入的兜底蔬菜会再次造成全天重复。
+    diversifyDailyVegetables(plan, availableRecipes, settings.babyAge);
+    // 最后确认早餐蛋白质和午餐肉菜；候选优先不含蔬菜，不破坏去重结果。
+    ensureBreakfastProtein(plan, availableRecipes, settings.babyAge);
+    ensureLunchRedMeat(plan, availableRecipes, settings.babyAge);
   }
 
   // 最终全周数量修剪
   trimWeeklyDishCount(plan, settings.babyAge);
 
   return plan;
+}
+
+function ensureBreakfastProtein(
+  plan: WeeklyPlan,
+  availableRecipes: Record<DishType, Recipe[]>,
+  age: AgeGroup,
+): void {
+  if (!isAge12Plus(age)) return;
+  const candidates = [...availableRecipes.egg, ...availableRecipes.meat]
+    .filter(recipe => !recipe.name.includes('蛋黄') && !hasStapleIngredients(recipe))
+    .sort((a, b) => Number(getVegetableIngredients(a).length > 0) - Number(getVegetableIngredients(b).length > 0));
+  for (const day of DAYS_OF_WEEK) {
+    const breakfast = plan[day].breakfast;
+    if (!breakfast.dishes.some(dish => dish.dishType === 'staple')) {
+      const staple = availableRecipes.staple.find(recipe => !isLunchDinnerOnlyStaple(recipe));
+      if (staple) {
+        const replaceIndex = breakfast.dishes.findIndex(dish => dish.dishType === 'vegetable' || dish.dishType === 'soup');
+        if (replaceIndex >= 0) breakfast.dishes[replaceIndex] = staple;
+        else breakfast.dishes.unshift(staple);
+      }
+    }
+    if (breakfast.dishes.some(dish => inferProteinSource(dish) !== 'none')) continue;
+    const replacement = candidates.find(candidate =>
+      getRepeatedProteinCategories([...breakfast.dishes, candidate]).length === 0
+    );
+    if (!replacement) continue;
+    const replaceIndex = breakfast.dishes.findIndex(dish => dish.dishType === 'vegetable' || dish.dishType === 'soup');
+    if (replaceIndex >= 0) breakfast.dishes[replaceIndex] = replacement;
+    else breakfast.dishes.push(replacement);
+    breakfast.dishes = limitDishCount(breakfast.dishes, getMealDishLimit(age, 'breakfast').max);
+  }
+}
+
+/** 粥、汤面、馄饨等带汤水主食不再搭配独立汤品，早餐也必须遵守。 */
+function removeSoupWithSoupyStaples(
+  plan: WeeklyPlan,
+  availableRecipes: Record<DishType, Recipe[]>,
+): void {
+  for (const day of DAYS_OF_WEEK) {
+    for (const mealType of ['breakfast', 'lunch', 'dinner'] as MealType[]) {
+      const meal = plan[day][mealType];
+      if (!meal.dishes.some(isSoupyStaple)) continue;
+      meal.dishes = meal.dishes.map(dish => {
+        if (dish.dishType !== 'soup') return dish;
+        const otherDishes = meal.dishes.filter(other => other !== dish);
+        const needsProtein = inferProteinSource(dish) !== 'none';
+        const originalProteinType = getProteinType(dish);
+        const replacementPool = needsProtein
+          ? [...availableRecipes.egg, ...availableRecipes.meat]
+          : availableRecipes.vegetable;
+        const isSafeReplacement = (candidate: Recipe) =>
+          !hasStapleIngredients(candidate) &&
+          (!candidate.mealSuitable || candidate.mealSuitable.includes(mealType)) &&
+          (mealType === 'breakfast' || !isBreakfastOnly(candidate)) &&
+          getRepeatedProteinCategories([...otherDishes, candidate]).length === 0;
+        const replacement = replacementPool.find(candidate =>
+          isSafeReplacement(candidate) &&
+          (!needsProtein || getProteinType(candidate) === originalProteinType)
+        ) || (needsProtein
+          ? [...availableRecipes.egg, ...availableRecipes.meat].find(isSafeReplacement)
+          : null);
+        return replacement || dish;
+      }).filter(dish => dish.dishType !== 'soup');
+    }
+  }
+}
+
+/**
+ * 1 岁以上午餐尽量固定一份红肉。若当前午餐只有蛋、豆、禽或鱼虾，
+ * 用红肉替换主要蛋白质菜，而不是在原组合上继续追加，避免蛋白质堆叠。
+ */
+function ensureLunchRedMeat(
+  plan: WeeklyPlan,
+  availableRecipes: Record<DishType, Recipe[]>,
+  age: AgeGroup,
+): void {
+  if (!isAge12Plus(age)) return;
+  const redMeatPool = [...availableRecipes.meat, ...availableRecipes.soup]
+    .filter(recipe =>
+      getProteinType(recipe) === 'red_meat' &&
+      !isBreakfastOnly(recipe) &&
+      !hasStapleIngredients(recipe)
+    )
+    .sort((a, b) => Number(getVegetableIngredients(a).length > 0) - Number(getVegetableIngredients(b).length > 0));
+  if (redMeatPool.length === 0) return;
+
+  for (const day of DAYS_OF_WEEK) {
+    const breakfastHasBeef = plan[day].breakfast.dishes.some(dish =>
+      inferProteinSource(dish) === 'beef'
+    );
+    const lunch = plan[day].lunch;
+    const finalizeLunch = () => {
+      const kept: Recipe[] = [];
+      for (const dish of lunch.dishes) {
+        if (getRepeatedProteinCategories([...kept, dish]).length === 0) kept.push(dish);
+      }
+      const minimum = getMealDishLimit(age, 'lunch').min;
+      while (kept.length < minimum) {
+        const vegetable = availableRecipes.vegetable.find(candidate =>
+          inferProteinSource(candidate) === 'none' &&
+          !kept.some(dish => dish.id === candidate.id) &&
+          getRepeatedProteinCategories([...kept, candidate]).length === 0
+        );
+        if (!vegetable) break;
+        kept.push(vegetable);
+      }
+      lunch.dishes = kept;
+    };
+    const currentRedIndex = lunch.dishes.findIndex(dish => getProteinType(dish) === 'red_meat');
+    const currentRed = currentRedIndex >= 0 ? lunch.dishes[currentRedIndex] : null;
+    if (currentRed && (!breakfastHasBeef || inferProteinSource(currentRed) !== 'beef')) continue;
+    const proteinIndex = currentRedIndex >= 0 ? currentRedIndex : lunch.dishes.findIndex(dish =>
+      getProteinType(dish) !== 'none' && dish.dishType !== 'staple'
+    );
+    if (proteinIndex < 0) continue;
+    const otherDishes = lunch.dishes.filter((_, index) => index !== proteinIndex);
+    const existingPorkDish = otherDishes.find(dish => inferProteinSource(dish) === 'pork');
+    if (breakfastHasBeef && existingPorkDish) {
+      const vegetableReplacement = availableRecipes.vegetable.find(candidate =>
+        inferProteinSource(candidate) === 'none' &&
+        hasVegetables(candidate) &&
+        getRepeatedProteinCategories([...otherDishes, candidate]).length === 0
+      );
+      if (vegetableReplacement) lunch.dishes[proteinIndex] = vegetableReplacement;
+      finalizeLunch();
+      continue;
+    }
+    const differentRedMeatPool = redMeatPool.filter(candidate =>
+      !breakfastHasBeef || inferProteinSource(candidate) !== 'beef'
+    );
+    const nonBeefProteinPool = [...availableRecipes.meat, ...availableRecipes.egg, ...availableRecipes.soup].filter(candidate =>
+      inferProteinSource(candidate) !== 'beef' &&
+      inferProteinSource(candidate) !== 'none' &&
+      !isBreakfastOnly(candidate) &&
+      !hasStapleIngredients(candidate)
+    );
+    const replacementPool = differentRedMeatPool.length > 0
+      ? differentRedMeatPool
+      : (breakfastHasBeef && nonBeefProteinPool.length > 0 ? nonBeefProteinPool : redMeatPool);
+    const replacement = replacementPool.find(candidate =>
+      !lunch.dishes.some(dish => dish.id === candidate.id) &&
+      (breakfastHasBeef || getRepeatedProteinCategories([...otherDishes, candidate]).length === 0)
+    );
+    if (replacement) lunch.dishes[proteinIndex] = replacement;
+    finalizeLunch();
+  }
+}
+
+/** 晚餐已有鱼虾禽蛋豆时，移除或替换额外的红肉配菜。 */
+function removeDinnerRedMeatStacking(
+  plan: WeeklyPlan,
+  availableRecipes: Record<DishType, Recipe[]>,
+): void {
+  const lightTypes: ProteinType[] = ['fish', 'shrimp', 'poultry', 'egg', 'tofu'];
+  for (const day of DAYS_OF_WEEK) {
+    const dinner = plan[day].dinner;
+    const hasLightProtein = dinner.dishes.some(dish => lightTypes.includes(getProteinType(dish)));
+    if (!hasLightProtein) continue;
+    dinner.dishes = dinner.dishes.flatMap(dish => {
+      if (getProteinType(dish) !== 'red_meat') return [dish];
+      if (!hasVegetables(dish)) return [];
+      const otherDishes = dinner.dishes.filter(other => other !== dish);
+      const replacement = availableRecipes.vegetable.find(candidate =>
+        inferProteinSource(candidate) === 'none' &&
+        hasVegetables(candidate) &&
+        getRepeatedProteinCategories([...otherDishes, candidate]).length === 0
+      );
+      return replacement ? [replacement] : [];
+    });
+  }
+}
+
+/** 取出菜品中真正承担蔬菜角色的食材（不把米饭、肉类等算进来）。 */
+function getVegetableIngredients(recipe: Recipe): string[] {
+  return recipe.mainIngredients.filter(ingredient =>
+    isVegetableCategory(lookupFoodCategory(ingredient))
+  );
+}
+
+/**
+ * 同一天尽量不重复同一种蔬菜。食谱 ID 不同不代表食材不同，例如
+ * “蒜蓉西兰花”“西兰花虾仁”“清炒西兰花”实际都在重复西兰花。
+ */
+function diversifyDailyVegetables(
+  plan: WeeklyPlan,
+  availableRecipes: Record<DishType, Recipe[]>,
+  age: AgeGroup,
+): void {
+  for (const day of DAYS_OF_WEEK) {
+    const usedVegetables = new Set<string>();
+    const usedDishIds = new Set<string>();
+
+    for (const mealType of ['breakfast', 'lunch', 'dinner'] as MealType[]) {
+      const meal = plan[day][mealType];
+      for (let index = 0; index < meal.dishes.length; index++) {
+        const dish = meal.dishes[index];
+        const vegetables = getVegetableIngredients(dish);
+        const repeatsEarlierMeal = vegetables.some(vegetable => usedVegetables.has(vegetable));
+
+        if ((repeatsEarlierMeal && vegetables.length > 0) || usedDishIds.has(dish.id)) {
+          const sameTypePool = availableRecipes[dish.dishType];
+          const otherMealDishes = meal.dishes.filter((_, dishIndex) => dishIndex !== index);
+          const originalHasProtein = inferProteinSource(dish) !== 'none';
+          const originalProteinType = getProteinType(dish);
+          const replacement = sameTypePool.find(candidate => {
+            const candidateVegetables = getVegetableIngredients(candidate);
+            return candidate.id !== dish.id &&
+              !usedDishIds.has(candidate.id) &&
+              (dish.dishType !== 'vegetable' || candidateVegetables.length > 0) &&
+              (candidateVegetables.length > 0 || otherMealDishes.some(hasVegetables)) &&
+              (!candidate.mealSuitable || candidate.mealSuitable.includes(mealType)) &&
+              (mealType === 'breakfast' ? !isLunchDinnerOnlyStaple(candidate) : !isBreakfastOnly(candidate)) &&
+              !(mealType === 'lunch' && isOver2(age) && candidate.dishType === 'staple' && candidate.name.includes('粥')) &&
+              !(isSoupyStaple(candidate) && otherMealDishes.some(other => other.dishType === 'soup')) &&
+              (originalHasProtein
+                ? getProteinType(candidate) === originalProteinType
+                : inferProteinSource(candidate) === 'none') &&
+              candidateVegetables.every(vegetable => !usedVegetables.has(vegetable)) &&
+              getRepeatedProteinCategories([...otherMealDishes, candidate]).length === 0;
+          });
+
+          if (replacement) {
+            meal.dishes[index] = replacement;
+          }
+        }
+
+        const finalDish = meal.dishes[index];
+        usedDishIds.add(finalDish.id);
+        for (const vegetable of getVegetableIngredients(finalDish)) {
+          usedVegetables.add(vegetable);
+        }
+      }
+    }
+
+    // 若复合菜（如鸡肉丸子汤）中的蔬菜无法在同类型候选中替换，回头替换
+    // 当天较早出现的独立素菜，避免因候选角色受限而残留同种蔬菜。
+    const vegetableCounts = new Map<string, number>();
+    for (const mealType of ['breakfast', 'lunch', 'dinner'] as MealType[]) {
+      for (const dish of plan[day][mealType].dishes) {
+        for (const vegetable of new Set(getVegetableIngredients(dish))) {
+          vegetableCounts.set(vegetable, (vegetableCounts.get(vegetable) || 0) + 1);
+        }
+      }
+    }
+    for (const [repeatedVegetable, count] of vegetableCounts) {
+      if (count <= 1) continue;
+      let resolved = false;
+      for (const mealType of ['breakfast', 'lunch', 'dinner'] as MealType[]) {
+        const meal = plan[day][mealType];
+        const index = meal.dishes.findIndex(dish =>
+          dish.dishType === 'vegetable' && getVegetableIngredients(dish).includes(repeatedVegetable)
+        );
+        if (index < 0) continue;
+        const replacement = availableRecipes.vegetable.find(candidate => {
+          const vegetables = getVegetableIngredients(candidate);
+          return vegetables.length > 0 &&
+            inferProteinSource(candidate) === 'none' &&
+            !usedDishIds.has(candidate.id) &&
+            (!candidate.mealSuitable || candidate.mealSuitable.includes(mealType)) &&
+            vegetables.every(vegetable => !vegetableCounts.has(vegetable));
+        });
+        if (replacement) {
+          meal.dishes[index] = replacement;
+          usedDishIds.add(replacement.id);
+          for (const vegetable of getVegetableIngredients(replacement)) {
+            vegetableCounts.set(vegetable, 1);
+          }
+          resolved = true;
+        }
+        if (resolved) break;
+      }
+      if (!resolved) {
+        for (const mealType of ['breakfast', 'lunch', 'dinner'] as MealType[]) {
+          const meal = plan[day][mealType];
+          const index = meal.dishes.findIndex(dish =>
+            getVegetableIngredients(dish).includes(repeatedVegetable)
+          );
+          if (index < 0) continue;
+          const original = meal.dishes[index];
+          const originalProteinType = getProteinType(original);
+          const rolePool = originalProteinType === 'none'
+            ? availableRecipes[original.dishType]
+            : [...availableRecipes.meat, ...availableRecipes.egg, ...availableRecipes.soup];
+          const otherDishes = meal.dishes.filter((_, dishIndex) => dishIndex !== index);
+          const replacement = rolePool.find(candidate => {
+            const vegetables = getVegetableIngredients(candidate);
+            return candidate.id !== original.id &&
+              !usedDishIds.has(candidate.id) &&
+              getProteinType(candidate) === originalProteinType &&
+              (!candidate.mealSuitable || candidate.mealSuitable.includes(mealType)) &&
+              (mealType === 'breakfast' ? !isLunchDinnerOnlyStaple(candidate) : !isBreakfastOnly(candidate)) &&
+              (vegetables.length > 0 || otherDishes.some(hasVegetables)) &&
+              vegetables.every(vegetable => !vegetableCounts.has(vegetable)) &&
+              getRepeatedProteinCategories([...otherDishes, candidate]).length === 0;
+          });
+          if (replacement) {
+            meal.dishes[index] = replacement;
+            usedDishIds.add(replacement.id);
+            resolved = true;
+          }
+          if (resolved) break;
+        }
+      }
+    }
+
+    const finalVegetables = new Set<string>();
+    for (const mealType of ['breakfast', 'lunch', 'dinner'] as MealType[]) {
+      for (const dish of plan[day][mealType].dishes) {
+        getVegetableIngredients(dish).forEach(vegetable => finalVegetables.add(vegetable));
+      }
+    }
+    if (finalVegetables.size < 2) {
+      for (const mealType of ['lunch', 'dinner', 'breakfast'] as MealType[]) {
+        const meal = plan[day][mealType];
+        const index = meal.dishes.findIndex(dish =>
+          dish.dishType === 'vegetable' && getVegetableIngredients(dish).length === 0
+        );
+        if (index < 0) continue;
+        const replacement = availableRecipes.vegetable.find(candidate => {
+          const vegetables = getVegetableIngredients(candidate);
+          return vegetables.length > 0 &&
+            inferProteinSource(candidate) === 'none' &&
+            vegetables.every(vegetable => !finalVegetables.has(vegetable));
+        });
+        if (replacement) meal.dishes[index] = replacement;
+        break;
+      }
+    }
+  }
+}
+
+/**
+ * 周覆盖补菜、午晚餐互换蛋白等后处理都可能改变原本的单餐组合。
+ * 在最终裁剪前按实际食材做一次全周清理，避免“肉酱面 + 肉末蔬菜”这类
+ * 主菜名称不同、实际蛋白质重复的组合。
+ */
+function removeWeeklyProteinIngredientRepeats(
+  plan: WeeklyPlan,
+  availableRecipes: Record<DishType, Recipe[]>,
+  age: AgeGroup,
+): void {
+  if (!isAge12Plus(age)) return;
+  for (const day of DAYS_OF_WEEK) {
+    for (const mealType of ['breakfast', 'lunch', 'dinner'] as MealType[]) {
+      const meal = plan[day][mealType];
+
+      const kept: Recipe[] = [];
+      for (const dish of meal.dishes) {
+        if (getRepeatedProteinCategories([...kept, dish]).length === 0) {
+          kept.push(dish);
+          continue;
+        }
+
+        // 若重复菜同时承担唯一蔬菜角色，用不重复蛋白质的纯蔬菜替换，
+        // 而不是直接删除后留下“有主食、有肉、没蔬菜”的餐单。
+        if (hasVegetables(dish) && !kept.some(hasVegetables)) {
+          const replacement = availableRecipes.vegetable.find(candidate =>
+            candidate.id !== dish.id &&
+            getRepeatedProteinCategories([...kept, candidate]).length === 0
+          );
+          if (replacement) kept.push(replacement);
+        }
+      }
+
+      // 清理重复食材后仍要满足本餐的数量下限；优先补一份不重复蛋白质的蔬菜，
+      // 避免修复“重复吃肉”时又制造只有一道早餐或两道正餐的新问题。
+      const minimum = getMealDishLimit(age, mealType).min;
+      while (kept.filter(d => d.dishType !== 'dessert').length < minimum) {
+        const supplement = availableRecipes.vegetable.find(candidate =>
+          !kept.some(d => d.id === candidate.id) &&
+          (!candidate.mealSuitable || candidate.mealSuitable.includes(mealType)) &&
+          getRepeatedProteinCategories([...kept, candidate]).length === 0
+        );
+        if (!supplement) break;
+        kept.push(supplement);
+      }
+      meal.dishes = kept;
+    }
+  }
 }
 
 // 最终修剪：确保每餐菜品数量不超标
@@ -205,7 +596,11 @@ function ensureMealMandatory(
   // 缺蔬菜：直接补蔬菜或替换主食为含蔬菜的
   const check2 = checkMealMandatory(mealPlan.dishes, age, mealType);
   if (!check2.vegetableOk) {
-    const veg = pickWeightedRecipe(availableRecipes.vegetable);
+    const veg = pickWeightedRecipe(
+      availableRecipes.vegetable.filter(r =>
+        getRepeatedProteinCategories([...mealPlan.dishes, r]).length === 0
+      )
+    );
     if (veg && !mealPlan.dishes.some(d => d.id === veg.id)) {
       mealPlan.dishes.push(veg);
       weekUsedIds.add(veg.id);
@@ -257,11 +652,11 @@ function createDayPlan(
     return { breakfast, lunch, dinner };
   }
 
-  const breakfast = createMealPlan(availableRecipes, 'breakfast', weekUsedIds, age, dayUsedStapleNames);
-  const lunch = createMealPlan(availableRecipes, 'lunch', weekUsedIds, age, dayUsedStapleNames);
+  const breakfast = createMealPlan(availableRecipes, 'breakfast', weekUsedIds, age, dayUsedStapleNames, dayKey as DayOfWeek);
+  const lunch = createMealPlan(availableRecipes, 'lunch', weekUsedIds, age, dayUsedStapleNames, dayKey as DayOfWeek);
   // 9-11 月龄：2 餐辅食，晚餐为空
   const dinner: MealPlan = age === '9-11m' ? { dishes: [] }
-    : createMealPlan(availableRecipes, 'dinner', weekUsedIds, age, dayUsedStapleNames);
+    : createMealPlan(availableRecipes, 'dinner', weekUsedIds, age, dayUsedStapleNames, dayKey as DayOfWeek);
 
   // 1岁以上：午晚餐蛋白质互补（晚餐避免和午餐用同一种蛋白质）
   if (isAge12Plus(age)) {
@@ -609,6 +1004,9 @@ function ensureWeeklyCoverage(
           const testDishes = [...targetMeal.dishes, recipe];
           const reduced = reduceProteinSources(testDishes);
           if (reduced.length < testDishes.length) continue; // 蛋白质来源冲突，跳过
+          // 主要蛋白不同也可能共用同一种配料（如虾仁滑蛋 + 番茄炒蛋）。
+          // 从实际食材分类再检查一次，避免蛋类或肉类在同餐重复。
+          if (getRepeatedProteinCategories(testDishes).length > 0) continue;
           // 避免同一蛋白来源重复（如已有蛋类主食，不再追加蛋类菜）
           const newProtein = inferProteinSource(recipe);
           if (newProtein !== 'none' && newProtein !== 'mixed') {
@@ -694,7 +1092,8 @@ function createMealPlan(
   mealType: MealType,
   usedIds: Set<string>,
   babyAge: AgeGroup,
-  dayUsedStapleNames: Set<string>
+  dayUsedStapleNames: Set<string>,
+  dayKey?: DayOfWeek,
 ): MealPlan {
   // 9-11 月龄：每餐一道复合主食（主食+动物蛋白+蔬菜），不做分散式搭配
   if (babyAge === '9-11m') {
@@ -702,7 +1101,43 @@ function createMealPlan(
   }
 
   // 12个月以上：家庭餐结构 = 主食x1 + 蛋白质x1 + 蔬菜x1-2 + 可选水果
-  return createFamilyMealPlan(availableRecipes, mealType, usedIds, babyAge, dayUsedStapleNames);
+  return createFamilyMealPlan(availableRecipes, mealType, usedIds, babyAge, dayUsedStapleNames, dayKey);
+}
+
+// 每周轮换蛋白质重点：红肉主要放午餐，鱼虾和禽肉更多放晚餐，
+// 同时穿插蛋、豆，避免“优先红肉”退化为一周七天午餐都吃红肉。
+const LUNCH_PROTEIN_ROTATION: ProteinType[] = [
+  'red_meat', 'red_meat', 'red_meat', 'red_meat', 'red_meat', 'red_meat', 'red_meat',
+];
+const DINNER_PROTEIN_ROTATION: ProteinType[] = [
+  'fish', 'shrimp', 'poultry', 'fish', 'tofu', 'shrimp', 'poultry',
+];
+
+function pickMealProtein(
+  recipes: Recipe[],
+  mealType: MealType,
+  dayKey?: DayOfWeek,
+): Recipe | null {
+  if (recipes.length === 0) return null;
+  const rotation = mealType === 'lunch' ? LUNCH_PROTEIN_ROTATION : DINNER_PROTEIN_ROTATION;
+  const dayIndex = dayKey ? DAYS_OF_WEEK.indexOf(dayKey) : 0;
+  const preferred = rotation[Math.max(0, dayIndex)];
+  const preferredPool = recipes.filter(recipe => getProteinType(recipe) === preferred);
+  if (preferredPool.length > 0) return pickWeightedRecipe(preferredPool);
+
+  // 当前偏好受过敏、忌口或候选耗尽影响时，仍按餐次营养重点降级选择。
+  const fallbackOrder: ProteinType[] = mealType === 'lunch'
+    ? ['red_meat', 'poultry', 'egg', 'tofu', 'fish', 'shrimp']
+    : ['fish', 'shrimp', 'poultry', 'tofu', 'egg', 'red_meat'];
+  for (const proteinType of fallbackOrder) {
+    const sameType = recipes.filter(recipe => getProteinType(recipe) === proteinType);
+    if (sameType.length > 0) return pickWeightedRecipe(sameType);
+  }
+  return pickWeightedRecipe(recipes);
+}
+
+function uniqueRecipes(recipes: Recipe[]): Recipe[] {
+  return [...new Map(recipes.map(recipe => [recipe.id, recipe])).values()];
 }
 
 // ============================================================
@@ -715,6 +1150,7 @@ function createFamilyMealPlan(
   usedIds: Set<string>,
   babyAge: AgeGroup,
   dayUsedStapleNames: Set<string>,
+  dayKey?: DayOfWeek,
 ): MealPlan {
   const isBreakfast = mealType === 'breakfast';
   const isOver2 = babyAge === '2-3y' || babyAge === '3-5y';
@@ -764,6 +1200,13 @@ function createFamilyMealPlan(
     staplePool = staplePool.filter(r => !isYolkOnlyRecipe(r));
   }
 
+  // 午晚餐优先使用纯主食，把肉鱼蛋豆作为清晰、足量的独立菜品；
+  // 避免“面里有一点肉末”就被当成整餐的主要蛋白质。
+  if (!isBreakfast) {
+    const plainStaples = staplePool.filter(r => inferProteinSource(r) === 'none');
+    if (plainStaples.length > 0) staplePool = plainStaples;
+  }
+
   // ========== 步骤1：选主食 × 1 ==========
   const stapleRecipe = pickWeightedRecipe(staplePool.length > 0 ? staplePool : pool.staple);
   const selected: Recipe[] = [];
@@ -776,7 +1219,6 @@ function createFamilyMealPlan(
 
   // 判断主食属性
   const stapleHasProtein = stapleRecipe ? inferProteinSource(stapleRecipe) !== 'none' : false;
-  const stapleHasVeggie = stapleRecipe ? hasVegetables(stapleRecipe) : false;
   const stapleIsSoupy = stapleRecipe ? isSoupyStaple(stapleRecipe) : false;
 
   // 带汤水主食不配汤、不配银耳羹
@@ -817,9 +1259,13 @@ function createFamilyMealPlan(
         ...pool.meat,
         ...filterNonStaple(pool.egg.filter(r => !r.name.includes('蛋黄'))),
         ...filteredSoupPool.filter(r => inferProteinSource(r) !== 'none'),
+        // 周内同类菜品用完时仍保留各蛋白质类型，避免后半周午餐退化成素餐。
+        ...availableRecipes.meat.filter(r => !isBreakfastOnly(r)),
+        ...filterNonStaple(availableRecipes.egg.filter(r => !r.name.includes('蛋黄') && !isBreakfastOnly(r))),
+        ...(stapleIsSoupy ? [] : availableRecipes.soup.filter(r => inferProteinSource(r) !== 'none' && !isBreakfastOnly(r))),
       ];
-      proteinCandidates = sortByLunchProtein(proteinCandidates);
-      let proteinRecipe = pickWeightedRecipe(proteinCandidates);
+      proteinCandidates = sortByLunchProtein(uniqueRecipes(proteinCandidates));
+      let proteinRecipe = pickMealProtein(proteinCandidates, 'lunch', dayKey);
 
       // 兜底：从原始可用池选
       if (!proteinRecipe) {
@@ -828,7 +1274,7 @@ function createFamilyMealPlan(
           ...availableRecipes.egg.filter(r => !r.name.includes('蛋黄')),
           ...(stapleIsSoupy ? [] : availableRecipes.soup.filter(r => inferProteinSource(r) !== 'none')),
         ]);
-        proteinRecipe = pickWeightedRecipe(proteinCandidates);
+        proteinRecipe = pickMealProtein(proteinCandidates, 'lunch', dayKey);
       }
 
       if (proteinRecipe) {
@@ -845,10 +1291,13 @@ function createFamilyMealPlan(
       // 构建蛋白质候选池，按晚餐优先级排序，优先易消化
       let proteinCandidates: Recipe[] = [
         ...filterNonStaple(pool.egg.filter(r => !r.name.includes('蛋黄'))),
-        ...pool.meat.filter(r => isEasyDigest(r)),
+        ...pool.meat,
         ...filteredSoupPool.filter(r => inferProteinSource(r) !== 'none' && isEasyDigest(r)),
+        ...filterNonStaple(availableRecipes.egg.filter(r => !r.name.includes('蛋黄') && !isBreakfastOnly(r))),
+        ...availableRecipes.meat.filter(r => !isBreakfastOnly(r) && !r.name.includes('炸')),
+        ...(stapleIsSoupy ? [] : availableRecipes.soup.filter(r => inferProteinSource(r) !== 'none' && isEasyDigest(r) && !isBreakfastOnly(r))),
       ];
-      proteinCandidates = sortByDinnerProtein(proteinCandidates);
+      proteinCandidates = sortByDinnerProtein(uniqueRecipes(proteinCandidates));
 
       // 补充：不太易消化但可接受的候选
       if (proteinCandidates.length === 0) {
@@ -859,7 +1308,7 @@ function createFamilyMealPlan(
         ]);
       }
 
-      let proteinRecipe = pickWeightedRecipe(proteinCandidates);
+      let proteinRecipe = pickMealProtein(proteinCandidates, 'dinner', dayKey);
 
       // 兜底：从原始可用池选（排除明显不适合晚餐的重口味）
       if (!proteinRecipe) {
@@ -868,7 +1317,7 @@ function createFamilyMealPlan(
           ...availableRecipes.meat.filter(r => !r.name.includes('红烧') && !r.name.includes('炸')),
           ...(stapleIsSoupy ? [] : availableRecipes.soup.filter(r => inferProteinSource(r) !== 'none' && !r.name.includes('红烧') && !r.name.includes('炸'))),
         ]);
-        proteinRecipe = pickWeightedRecipe(proteinCandidates);
+        proteinRecipe = pickMealProtein(proteinCandidates, 'dinner', dayKey);
       }
 
       if (proteinRecipe) {
@@ -886,12 +1335,16 @@ function createFamilyMealPlan(
   const vegPool = [
     ...pool.vegetable,
     ...(isDinner ? [] : filteredSoupPool.filter(r => hasVegetables(r))),
-  ].filter(r => !existingIds.has(r.id));
+  ].filter(r =>
+    !existingIds.has(r.id) &&
+    getRepeatedProteinCategories([...selected, r]).length === 0
+  );
 
-  // 早餐最多选1个蔬菜/汤，午晚餐1-2个
+  // 早餐蔬菜可选；午晚餐安排一道蔬菜即可。不同颜色和品种放到“全天/全周”
+  // 维度轮换，而不是机械拆成两道素菜，减少家庭每顿的开火数量。
   const needVegCount = isBreakfast
     ? (Math.random() < 0.5 ? 1 : 0)
-    : (stapleHasVeggie ? 1 : 2);
+    : 1;
 
   for (let i = 0; i < needVegCount; i++) {
     let vegRecipe = pickWeightedRecipe(vegPool);
@@ -900,7 +1353,10 @@ function createFamilyMealPlan(
       const fallbackVeg = [
         ...availableRecipes.vegetable,
         ...(isDinner ? [] : filteredSoupPool.filter(r => hasVegetables(r))),
-      ].filter(r => !existingIds.has(r.id));
+      ].filter(r =>
+        !existingIds.has(r.id) &&
+        getRepeatedProteinCategories([...selected, r]).length === 0
+      );
       vegRecipe = pickWeightedRecipe(fallbackVeg);
     }
     if (vegRecipe) {
@@ -972,7 +1428,11 @@ function createFamilyMealPlan(
       return hasVegetables(d);
     });
     if (!hasVegNow) {
-      const anyVeg = pickWeightedRecipe(availableRecipes.vegetable);
+      const anyVeg = pickWeightedRecipe(
+        availableRecipes.vegetable.filter(r =>
+          getRepeatedProteinCategories([...selected, r]).length === 0
+        )
+      );
       if (anyVeg && !selected.some(d => d.id === anyVeg.id)) {
         selected.push(anyVeg);
         usedIds.add(anyVeg.id);
@@ -1072,7 +1532,11 @@ function applyComplementaryDinner(
       ...availableRecipes.egg,
     ].filter(r => {
       const p = inferProteinSource(r);
-      return p !== 'none' && p !== overlapProtein && !lunchProteins.has(p);
+      const remainingDinner = dinner.dishes.filter(d => d !== dishToReplace);
+      return p !== 'none' &&
+        p !== overlapProtein &&
+        !lunchProteins.has(p) &&
+        getRepeatedProteinCategories([...remainingDinner, r]).length === 0;
     });
 
     const replacement = pickWeightedRecipe(replaceCandidates);
@@ -1163,19 +1627,53 @@ export function regenerateMeal(
   }
 
   const availableRecipes = filterRecipes(settings, customRecipes);
-  const usedIds = new Set(usedRecipes.map(r => r.id));
+  const usedRecipeIds = usedRecipes.map(r => r.id);
 
-  // 从可用食谱中过滤掉已使用的
-  const filtered: Record<DishType, Recipe[]> = {
-    staple: availableRecipes.staple.filter(r => !usedIds.has(r.id)),
-    meat: availableRecipes.meat.filter(r => !usedIds.has(r.id)),
-    vegetable: availableRecipes.vegetable.filter(r => !usedIds.has(r.id)),
-    soup: availableRecipes.soup.filter(r => !usedIds.has(r.id)),
-    egg: availableRecipes.egg.filter(r => !usedIds.has(r.id)),
-    dessert: availableRecipes.dessert.filter(r => !usedIds.has(r.id)),
-  };
+  // 传入完整合规池，由 createFamilyMealPlan 优先过滤已使用菜品并在某一营养
+  // 类型耗尽时回退完整池。若先在这里永久删掉已使用红肉，刷新午餐到后半周
+  // 就可能只剩“蛋花汤 + 两道素菜”，绕过午餐红肉优先规则。
+  // 随机候选仍可能偶发形成同餐蔬菜重复等上下文冲突，因此刷新结果必须先
+  // 通过与单菜替换相同的整餐校验，不能生成一次后未经验证直接写入状态。
+  for (let attempt = 0; attempt < 12; attempt++) {
+    const meal = createMealPlan(
+      availableRecipes,
+      mealType,
+      new Set(usedRecipeIds),
+      age,
+      new Set<string>()
+    );
+    if (isMealSuitableForContext(meal, mealType, age)) return meal;
+  }
 
-  return createMealPlan(filtered, mealType, usedIds, age, new Set<string>());
+  // 食谱池受严重过敏/忌口限制时保留最后一次生成结果，由 UI 继续允许用户调整。
+  return createMealPlan(availableRecipes, mealType, new Set(usedRecipeIds), age, new Set<string>());
+}
+
+/** 用户手动“换一道”后检查组合是否仍满足该餐次的硬规则。 */
+export function isMealSuitableForContext(
+  mealPlan: MealPlan,
+  mealType: MealType,
+  age: AgeGroup,
+): boolean {
+  if (!isAge12Plus(age)) return true;
+  const dishes = mealPlan.dishes;
+  if (getRepeatedProteinCategories(dishes).length > 0) return false;
+  const vegetables = dishes.flatMap(getVegetableIngredients);
+  if (new Set(vegetables).size !== vegetables.length) return false;
+  if (dishes.some(isSoupyStaple) && dishes.some(dish => dish.dishType === 'soup')) return false;
+  const mandatory = checkMealMandatory(dishes, age, mealType);
+  if (!mandatory.stapleOk || !mandatory.proteinOk) return false;
+  if (mealType !== 'breakfast' && !mandatory.vegetableOk) return false;
+
+  if (mealType === 'lunch') {
+    return dishes.some(dish => dish.dishType !== 'staple' && getProteinType(dish) === 'red_meat');
+  }
+  if (mealType === 'dinner') {
+    const lightTypes: ProteinType[] = ['fish', 'shrimp', 'poultry', 'egg', 'tofu'];
+    return dishes.some(dish => dish.dishType !== 'staple' && lightTypes.includes(getProteinType(dish))) &&
+      !dishes.some(dish => getProteinType(dish) === 'red_meat');
+  }
+  return true;
 }
 
 // 交换午餐和晚餐

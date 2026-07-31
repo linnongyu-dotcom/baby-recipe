@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { UserSettings, WeeklyPlan, Recipe, DayOfWeek, MealType, MealPlan, FoodRecord, BabyProfile, AgeGroup } from '../types';
-import { generateWeeklyPlan, regenerateMeal, regenerateDish, swapMeals } from '../utils/recipeGenerator';
+import { generateWeeklyPlan, regenerateMeal, regenerateDish, isMealSuitableForContext, swapMeals } from '../utils/recipeGenerator';
 import { calcAge, generateBabyId, estimateBirthDateFromAgeGroup } from '../utils/babyProfile';
 
 interface AppState {
@@ -188,6 +188,18 @@ export const useStore = create<AppState>()(
         const newDishes = [...mealPlan.dishes];
         newDishes[dishIndex] = newDish;
 
+        // “换一道”不能绕过整餐规则。如果单菜替换造成午餐无红肉、晚餐无轻蛋白、
+        // 粥配汤或蔬菜/蛋白质重复，则重新生成这一餐，而不是保存不合理组合。
+        const candidateMeal: MealPlan = { dishes: newDishes };
+        const finalMeal = isMealSuitableForContext(candidateMeal, mealType, effectiveAge)
+          ? candidateMeal
+          : regenerateMeal(
+              { ...state.settings, babyAge: effectiveAge },
+              state.customRecipes,
+              usedRecipes,
+              mealType
+            );
+
         set((s) => ({
           weeklyPlan: {
             ...s.weeklyPlan!,
@@ -195,7 +207,7 @@ export const useStore = create<AppState>()(
               ...s.weeklyPlan![day],
               [mealType]: {
                 ...s.weeklyPlan![day][mealType],
-                dishes: newDishes,
+                dishes: finalMeal.dishes,
               },
             },
           },
@@ -379,7 +391,7 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'baby-recipe-storage',
-      version: 39,
+      version: 46,
       migrate: (persistedState: any, version: number) => {
         if (version < 30) {
           return {
@@ -456,6 +468,56 @@ export const useStore = create<AppState>()(
               ...(persistedState?.settings || defaultSettings),
               babyAge: null,
             },
+          };
+        }
+        // v40: 推荐器增加全天真实蔬菜食材去重。旧周计划保存在 localStorage，
+        // 仅刷新页面不会重新运行生成器，因此清空缓存并由食谱页自动生成新版餐单。
+        if (version < 40) {
+          return {
+            ...persistedState,
+            weeklyPlan: null,
+          };
+        }
+        // v41: 午餐强化红肉/禽肉/豆制品，晚餐转为鱼虾禽蛋豆并丰富蔬菜。
+        if (version < 41) {
+          return {
+            ...persistedState,
+            weeklyPlan: null,
+          };
+        }
+        // v42: 午餐固定优先一份红肉，并限制同餐蛋制品重复。
+        if (version < 42) {
+          return {
+            ...persistedState,
+            weeklyPlan: null,
+          };
+        }
+        // v43: 粥、汤面等带汤水主食不再搭配独立汤品，包含早餐。
+        if (version < 43) {
+          return {
+            ...persistedState,
+            weeklyPlan: null,
+          };
+        }
+        // v44: 同餐蔬菜去重、早午餐红肉错开，并确保午餐有独立红肉菜。
+        if (version < 44) {
+          return {
+            ...persistedState,
+            weeklyPlan: null,
+          };
+        }
+        // v45: 修复刷新单餐时蛋白质候选池耗尽导致午餐退化为素餐。
+        if (version < 45) {
+          return {
+            ...persistedState,
+            weeklyPlan: null,
+          };
+        }
+        // v46: 单菜替换也必须重新校验午晚餐蛋白质和粥汤/蔬菜重复规则。
+        if (version < 46) {
+          return {
+            ...persistedState,
+            weeklyPlan: null,
           };
         }
         return persistedState;

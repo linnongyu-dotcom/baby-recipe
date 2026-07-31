@@ -390,7 +390,7 @@ export const recipes: Recipe[] = [
     category: '主食',
     nutrition: '南瓜香甜，宝宝爱吃',
     mainIngredients: ['大米', '南瓜'],
-    dishType: 'meat',
+    dishType: 'staple',
   },
   {
     id: 'r029',

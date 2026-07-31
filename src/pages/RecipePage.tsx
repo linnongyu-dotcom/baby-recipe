@@ -783,6 +783,29 @@ export function RecipePage() {
           </motion.div>
         )}
 
+        {/* 家庭场景下的执行提示：营养覆盖不等于每餐都要做很多道菜 */}
+        {displayPlan && !isTwoMeal && !isInfantFeeding && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.045 }}
+            className="mb-6 rounded-2xl border border-amber-100 bg-amber-50/70 p-5"
+          >
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-2xl">👨‍👩‍👧</span>
+              <div>
+                <h2 className="text-base font-semibold text-gray-800">家庭备餐小窍门</h2>
+                <p className="text-xs text-gray-500">少做几道，也能搭配完整</p>
+              </div>
+            </div>
+            <div className="grid gap-2 text-sm text-gray-700 sm:grid-cols-3">
+              <p className="rounded-xl bg-white/80 px-3 py-2">🍚 午晚餐按“1份主食 + 1道蛋白质菜 + 1道蔬菜”准备</p>
+              <p className="rounded-xl bg-white/80 px-3 py-2">🥣 全家同锅烹调，先盛出宝宝份，再给成人部分调味</p>
+              <p className="rounded-xl bg-white/80 px-3 py-2">🔪 食材可以共用，宝宝份按年龄切碎、煮软，避免整颗坚果等噎食风险</p>
+            </div>
+          </motion.div>
+        )}
+
         {/* 今日饮食总结（9-11m及以上） */}
         {displayPlan && todayNutrition && !is6to8m && !isInfantFeeding && (
           <motion.div

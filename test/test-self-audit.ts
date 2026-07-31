@@ -2,9 +2,9 @@
  * 资深测试人员自测：12个月以上宝宝三餐推荐合理性
  * 覆盖所有验收标准和边界情况
  */
-import { generateWeeklyPlan, regenerateMeal, swapMeals } from '../src/utils/recipeGenerator';
+import { generateWeeklyPlan, regenerateMeal, isMealSuitableForContext, swapMeals } from '../src/utils/recipeGenerator';
 import { UserSettings, AgeGroup, Recipe, MealType } from '../src/types';
-import { inferProteinSource, isTextureForbiddenForAge12Plus, checkMealMandatory } from '../src/utils/mealValidator';
+import { inferProteinSource, isTextureForbiddenForAge12Plus, checkMealMandatory, getMealDishLimit, getProteinType, getRepeatedProteinCategories } from '../src/utils/mealValidator';
 import { lookupFoodCategory } from '../src/utils/foodDictionary';
 
 // ============================================================
@@ -128,6 +128,24 @@ function runFullTest(age: AgeGroup, rounds: number): TestSuite {
             loc, '蛋白质不过度堆叠', `蛋白质来源: ${[...proteinSources].join(',')}`
           );
 
+          const vegetableIngredients = dishes.flatMap(dish =>
+            dish.mainIngredients.filter(ingredient => {
+              const category = lookupFoodCategory(ingredient);
+              return category === 'darkVeg' || category === 'lightVeg';
+            })
+          );
+          suite.check(
+            new Set(vegetableIngredients).size === vegetableIngredients.length,
+            loc, '同餐蔬菜食材不重复',
+            `同餐重复蔬菜：${vegetableIngredients.filter((ingredient, index, all) => all.indexOf(ingredient) !== index).join('、')}`
+          );
+          const repeatedProteinIngredients = getRepeatedProteinCategories(dishes);
+          suite.check(
+            repeatedProteinIngredients.length === 0,
+            loc, '蛋白质食材不重复',
+            `重复食材分类: ${repeatedProteinIngredients.join(',')}；菜品: ${dishes.map(d => d.name).join('、')}`
+          );
+
           // ✅ 检查4：数量控制
           const mainDishes = dishes.filter(d => d.dishType !== 'dessert');
           const ageLimits: Record<AgeGroup, Record<string, number>> = {
@@ -152,6 +170,12 @@ function runFullTest(age: AgeGroup, rounds: number): TestSuite {
               soups.length === 0,
               loc, '汤水面食不配汤', `${staple.name}不应配汤(${soups.map(s => s.name).join(',')})`
             );
+            if (mealType === 'breakfast') {
+              suite.check(
+                soups.length === 0,
+                loc, '早餐粥不配汤', `${staple.name}不应再搭配${soups.map(s => s.name).join(',')}`
+              );
+            }
             const desserts = dishes.filter(d => d.dishType === 'dessert');
             const silverEar = desserts.filter(d => d.name.includes('银耳') || d.name.includes('羹'));
             suite.check(
@@ -205,13 +229,12 @@ function runFullTest(age: AgeGroup, rounds: number): TestSuite {
             );
           }
 
-          // ✅ 检查9：午晚餐至少2道主菜（不含甜品）
-          if (mealType !== 'breakfast') {
-            suite.check(
-              mainDishes.length >= 2,
-              loc, '午晚餐至少2道主菜', `仅${mainDishes.length}道`
-            );
-          }
+          // ✅ 检查9：数量下限与生成规则保持一致
+          const minimum = getMealDishLimit(age, mealType).min;
+          suite.check(
+            mainDishes.length >= minimum,
+            loc, '菜品数量下限', `仅${mainDishes.length}道，规则要求至少${minimum}道`
+          );
         }
 
         // =========================================
@@ -241,6 +264,83 @@ function runFullTest(age: AgeGroup, rounds: number): TestSuite {
         suite.check(
           unique.size === dayStapleNames.length,
           dayName + '全天', '同天主食不重复', `重复: ${dayStapleNames.filter((n, i, a) => a.indexOf(n) !== i).join(',')}`
+        );
+      }
+
+      // 同一天不能只换做法却重复同一种蔬菜（如三顿都出现西兰花）
+      if (is12Plus) {
+        const vegetableCounts = new Map<string, number>();
+        for (const mealType of MEALS) {
+          for (const dish of dayPlan[mealType].dishes) {
+            const dishVegetables = new Set(
+              dish.mainIngredients.filter(ingredient => {
+                const category = lookupFoodCategory(ingredient);
+                return category === 'darkVeg' || category === 'lightVeg';
+              })
+            );
+            for (const vegetable of dishVegetables) {
+              vegetableCounts.set(vegetable, (vegetableCounts.get(vegetable) || 0) + 1);
+            }
+          }
+        }
+        const repeatedVegetables = [...vegetableCounts.entries()]
+          .filter(([, count]) => count > 1)
+          .map(([vegetable]) => vegetable);
+        suite.check(
+          repeatedVegetables.length === 0,
+          dayName + '全天', '蔬菜全天不重复',
+          `重复蔬菜: ${repeatedVegetables.join('、')}；` +
+          MEALS.map(mealType => `${mealType}=${dayPlan[mealType].dishes.map(dish => dish.name).join('、')}`).join('；')
+        );
+
+        const lunchProteinTypes = dayPlan.lunch.dishes.map(getProteinType);
+        const dinnerProteinTypes = dayPlan.dinner.dishes.map(getProteinType);
+        const breakfastHasBeefForLunchRule = dayPlan.breakfast.dishes.some(dish =>
+          inferProteinSource(dish) === 'beef'
+        );
+        suite.check(
+          breakfastHasBeefForLunchRule
+            ? lunchProteinTypes.some(type => type !== 'none')
+            : lunchProteinTypes.includes('red_meat'),
+          dayName + '午餐', '午餐优先红肉',
+          `无早餐牛肉时午餐应安排红肉；实际${lunchProteinTypes.join('、')}`
+        );
+        const lunchEggDishes = dayPlan.lunch.dishes.filter(dish =>
+          dish.mainIngredients.some(ingredient => lookupFoodCategory(ingredient) === 'egg')
+        );
+        const breakfastHasBeef = breakfastHasBeefForLunchRule;
+        const lunchRedSources = dayPlan.lunch.dishes
+          .map(inferProteinSource)
+          .filter(source => source === 'beef' || source === 'pork');
+        suite.check(
+          !breakfastHasBeef || !lunchRedSources.includes('beef'),
+          dayName + '午餐', '早餐牛肉后午餐换红肉',
+          `早餐有牛肉，午餐红肉为${lunchRedSources.join('、')}`
+        );
+        const lunchIndependentProteins = dayPlan.lunch.dishes.filter(dish =>
+          dish.dishType !== 'staple' && getProteinType(dish) !== 'none'
+        );
+        suite.check(
+          lunchIndependentProteins.some(dish => breakfastHasBeef
+            ? inferProteinSource(dish) !== 'beef'
+            : getProteinType(dish) === 'red_meat'),
+          dayName + '午餐', '午餐不以鱼丸汤代替肉菜',
+          `独立蛋白质菜：${lunchIndependentProteins.map(dish => dish.name).join('、')}`
+        );
+        suite.check(
+          lunchEggDishes.length <= 1,
+          dayName + '午餐', '午餐蛋制品不重复',
+          `出现${lunchEggDishes.length}道含蛋菜：${lunchEggDishes.map(dish => dish.name).join('、')}`
+        );
+        suite.check(
+          dinnerProteinTypes.some(type => ['fish', 'shrimp', 'poultry', 'tofu', 'egg'].includes(type)) &&
+            !dinnerProteinTypes.includes('red_meat'),
+          dayName + '晚餐', '晚餐轻蛋白质',
+          `晚餐应优先鱼虾、禽肉、蛋或豆制品且避免红肉，实际${dinnerProteinTypes.join('、')}`
+        );
+        suite.check(
+          vegetableCounts.size >= 2,
+          dayName + '全天', '蔬菜种类丰富', `全天仅${vegetableCounts.size}种蔬菜`
         );
       }
     }
@@ -283,6 +383,26 @@ function runFullTest(age: AgeGroup, rounds: number): TestSuite {
       suite.check(
         rMain.length <= rLimits[mealType],
         `regenerate ${mealType}`, '菜品数量', `${rMain.length}道`
+      );
+      if (mealType === 'lunch') {
+        suite.check(
+          rd.some(dish => getProteinType(dish) === 'red_meat' && dish.dishType !== 'staple'),
+          'regenerate lunch', '刷新午餐仍有独立红肉菜',
+          `刷新结果：${rd.map(dish => dish.name).join('、')}`
+        );
+        const eggDishes = rd.filter(dish =>
+          dish.mainIngredients.some(ingredient => lookupFoodCategory(ingredient) === 'egg')
+        );
+        suite.check(
+          eggDishes.length <= 1,
+          'regenerate lunch', '刷新午餐蛋制品不重复',
+          `含蛋菜：${eggDishes.map(dish => dish.name).join('、')}`
+        );
+      }
+      suite.check(
+        isMealSuitableForContext(regenerated, mealType, age),
+        `regenerate ${mealType}`, '刷新餐次通过上下文校验',
+        `刷新结果：${rd.map(dish => dish.name).join('、')}`
       );
     }
 

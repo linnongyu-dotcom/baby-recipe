@@ -5,6 +5,7 @@
 import { deriveNutritionTags } from '../src/utils/mealValidator';
 import { lookupFoodCategory, FoodCategory, FOOD_CATEGORY_META } from '../src/utils/foodDictionary';
 import { recipes } from '../src/data/recipes';
+import { NUTRITION_VALUE_TAGS, COOKING_METHOD_TAGS } from '../src/types';
 import type { Recipe, NutritionTag } from '../src/types';
 
 // ============================================================
@@ -62,14 +63,16 @@ console.log('='.repeat(60));
     countDistribution[tagCount] = (countDistribution[tagCount] || 0) + 1;
 
     if (tagCount === 0) emptyCount++;
-    if (tagCount > 3) over3Count++;
+    const nutritionCount = tags.filter(tag => NUTRITION_VALUE_TAGS.includes(tag)).length;
+    const cookingCount = tags.filter(tag => COOKING_METHOD_TAGS.includes(tag)).length;
+    if (nutritionCount > 3 || cookingCount > 2 || tagCount > 5) over3Count++;
   }
 
   console.log(`  食谱总数: ${recipes.length}`);
   console.log(`  标签分布: 1个=${countDistribution[1] || 0}, 2个=${countDistribution[2] || 0}, 3个=${countDistribution[3] || 0}`);
 
   assert(emptyCount === 0, `空标签食谱数: ${emptyCount} (应为0)`);
-  assert(over3Count === 0, `超过3个标签的食谱数: ${over3Count} (应为0)`);
+  assert(over3Count === 0, `超过“营养3个+制作2个”限制的食谱数: ${over3Count} (应为0)`);
 }
 
 // 1.2 标签类型验证：不应出现旧的功能性标签
@@ -174,7 +177,8 @@ console.log('='.repeat(60));
       // 检查是否因为核心标签已满而被裁剪
       const hasStaple = recipe.dishType === 'staple' || cats.includes('staple');
       const hasAnyVeg = cats.some(c => c === 'darkVeg' || c === 'lightVeg');
-      if (hasStaple && hasAnyVeg && tags.length === 3) {
+      const nutritionTagCount = tags.filter(tag => NUTRITION_VALUE_TAGS.includes(tag)).length;
+      if (hasStaple && hasAnyVeg && nutritionTagCount === 3) {
         // 复合菜品：主食+蛋白质+蔬菜，3个核心标签已满，含铁食材被正确裁剪
         redMeatTrimmed++;
       } else {
@@ -253,7 +257,9 @@ console.log('='.repeat(60));
   console.log('\n2.5 复合菜品（max 3 tags，蔬菜优先于含铁食材）...');
   const recipe = makeRecipe('t-combo', '牛肉番茄面', ['面条', '牛肉', '番茄'], 'staple');
   const tags = deriveNutritionTags(recipe);
-  assert(tags.length <= 3, `复合菜品不应超过3个标签，实际: ${tags.length}`);
+  const nutritionCount = tags.filter(tag => NUTRITION_VALUE_TAGS.includes(tag)).length;
+  const cookingCount = tags.filter(tag => COOKING_METHOD_TAGS.includes(tag)).length;
+  assert(nutritionCount <= 3 && cookingCount <= 2, `复合菜品标签应满足营养≤3、制作≤2，实际: ${nutritionCount}+${cookingCount}`);
   assert(tags.includes('主食来源'), '复合菜品应包含主食标签');
   assert(tags.includes('优质蛋白'), '复合菜品应包含蛋白质标签');
   assert(tags.includes('深色蔬菜'), '复合菜品应包含蔬菜标签（优先级高于含铁食材）');

@@ -1,4 +1,4 @@
-import { Recipe, AgeGroup, MealType, ProteinSource, TextureLevel, AGE_TEXTURE_RULES, AGE_EGG_RULES, AGE_MEAL_STRUCTURE, NutritionTag } from '../types';
+import { Recipe, AgeGroup, MealType, DishType, ProteinSource, TextureLevel, AGE_TEXTURE_RULES, AGE_EGG_RULES, AGE_MEAL_STRUCTURE, NutritionTag } from '../types';
 import { lookupFoodCategory, isMeatOrEggLike, isVegetableCategory, FoodCategory } from './foodDictionary';
 import { isAge12Plus, is6to8m, is9to11m, isOver2 } from './ageRules';
 
@@ -136,7 +136,13 @@ export function getMealDishLimit(age: AgeGroup, mealType: MealType): { min: numb
   // 1岁以下每餐只有1道菜（复合主食或单一辅食）
   if (is6to8m(age) || is9to11m(age)) return { min: 1, max: 1 };
 
-  return { min: structure.minTotalDishes, max: structure.maxTotalDishes };
+  // 家庭实际备餐不需要把每一种食物都拆成一道菜。早餐保持“主食 + 蛋白质”
+  // 的轻量结构；午晚餐用“主食 + 一道蛋白质菜 + 一道蔬菜”作为基础，
+  // 汤或第二种蔬菜只作为可选项。这样既覆盖核心食物组，也避免一顿做 5 道菜。
+  if (mealType === 'breakfast') {
+    return { min: 2, max: 3 };
+  }
+  return { min: 3, max: 4 };
 }
 
 // ============================================================
@@ -207,6 +213,30 @@ export function hasExcessiveProtein(dishes: Recipe[]): { overloaded: boolean; pr
   return { overloaded: false, proteinSources: [...sources] };
 }
 
+/**
+ * 检查多道菜是否重复使用同一种蛋白质食材。
+ * `proteinSource` 只描述菜品的“主要”蛋白质，例如虾仁滑蛋会记作 shrimp，
+ * 因此仅比较 proteinSource 会漏掉它与番茄炒蛋之间的鸡蛋重复。
+ */
+export function getRepeatedProteinCategories(dishes: Recipe[]): FoodCategory[] {
+  const seen = new Set<FoodCategory>();
+  const repeated = new Set<FoodCategory>();
+
+  for (const dish of dishes) {
+    const dishCategories = new Set(
+      dish.mainIngredients
+        .map(lookupFoodCategory)
+        .filter(isMeatOrEggLike),
+    );
+    for (const category of dishCategories) {
+      if (seen.has(category)) repeated.add(category);
+      seen.add(category);
+    }
+  }
+
+  return [...repeated];
+}
+
 // ============================================================
 // 综合校验（支持全年龄段）
 // ============================================================
@@ -260,6 +290,9 @@ export function validateMeal(
     const proteinCheck = hasExcessiveProtein(dishes);
     if (proteinCheck.overloaded) {
       errors.push(`蛋白质来源过多（${proteinCheck.proteinSources.join('、')}），建议每餐选择1种主要蛋白质`);
+    }
+    if (getRepeatedProteinCategories(dishes).length > 0) {
+      errors.push('同餐存在重复蛋白质食材，建议合并或替换其中一道菜');
     }
   }
 
@@ -363,20 +396,24 @@ export function limitDishCount(dishes: Recipe[], maxCount: number): Recipe[] {
 
   if (mainDishes.length <= maxCount) return dishes;
 
-  const removalPriority: Record<string, number> = {
-    dessert: 0,
-    soup: 1,
-    vegetable: 2,
-    egg: 3,
+  // 数量超限时应“删除”低优先级菜品。旧实现先把汤排到数组前面再 slice，
+  // 实际恰好保留了本应优先删除的汤，并可能删掉主食或蛋白质。
+  // 这里按餐盘核心角色保留：主食、主要蛋白、第一道蔬菜，最后才是汤。
+  const keepPriority: Record<DishType, number> = {
+    staple: 100,
+    meat: 90,
+    egg: 90,
+    vegetable: 80,
+    soup: 30,
+    dessert: 10,
   };
 
-  const sorted = [...dishes].sort((a, b) => {
-    const pa = removalPriority[a.dishType] ?? 10;
-    const pb = removalPriority[b.dishType] ?? 10;
-    return pa - pb;
-  });
-
-  return sorted.slice(0, maxCount);
+  return dishes
+    .map((dish, index) => ({ dish, index }))
+    .sort((a, b) => keepPriority[b.dish.dishType] - keepPriority[a.dish.dishType] || a.index - b.index)
+    .slice(0, maxCount)
+    .sort((a, b) => a.index - b.index)
+    .map(item => item.dish);
 }
 
 // ============================================================

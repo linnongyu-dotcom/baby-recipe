@@ -1,5 +1,5 @@
-import { generateMeal } from '../src/utils/recipeGenerator';
-import { UserSettings, Recipe, DishType } from '../src/types';
+import { generateWeeklyPlan } from '../src/utils/recipeGenerator';
+import { UserSettings } from '../src/types';
 import { recipes } from '../src/data/recipes';
 
 // 诊断3-4岁午餐为什么缺汤
@@ -11,9 +11,9 @@ const settings: UserSettings = {
 };
 
 // 模拟一周初始状态
-const allFiltered = recipes.filter(r => r.ageGroups.includes('3-4y'));
+const allFiltered = recipes.filter(r => r.ageGroups.includes('3-5y'));
 const soups = allFiltered.filter(r => r.dishType === 'soup');
-console.log('3-4y汤总数:', soups.length);
+console.log('3-5y汤总数:', soups.length);
 console.log('汤列表:', soups.map(s => s.name).join(', '));
 console.log();
 
