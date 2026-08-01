@@ -171,6 +171,37 @@ export function getStapleSubCategory(name: string): string {
   return 'other_staple';
 }
 
+/** 判断主食是否自带汤水，供生成和校验共用。 */
+export function isSoupyStaple(recipe: Recipe): boolean {
+  if (recipe.dishType !== 'staple') return false;
+
+  const name = recipe.name;
+  if (name.includes('粥') || name.includes('馄饨') || name.includes('疙瘩汤')) return true;
+
+  const dryNoodles = ['拌面', '炒面', '凉面', '炸酱面', '炸酱', '肉酱面', '肉酱'];
+  if (dryNoodles.some(keyword => name.includes(keyword))) return false;
+
+  return name.includes('汤面') || (name.includes('面') && name.includes('汤'));
+}
+
+/** 只返回 mainIngredients 中经食材字典确认的蔬菜。 */
+export function getVegetableIngredients(recipe: Recipe): string[] {
+  return recipe.mainIngredients.filter(ingredient =>
+    isVegetableCategory(lookupFoodCategory(ingredient))
+  );
+}
+
+/** 返回同餐在不同菜品中重复出现的蔬菜。 */
+export function getRepeatedVegetableIngredients(dishes: Recipe[]): string[] {
+  const counts = new Map<string, number>();
+  for (const dish of dishes) {
+    for (const vegetable of new Set(getVegetableIngredients(dish))) {
+      counts.set(vegetable, (counts.get(vegetable) || 0) + 1);
+    }
+  }
+  return [...counts.entries()].filter(([, count]) => count > 1).map(([name]) => name);
+}
+
 /** 检测同餐中是否存在重复主食 */
 export function hasDuplicateStaple(dishes: Recipe[]): { conflict: boolean; stapleNames: string[] } {
   const stapleDishes = dishes.filter(d => d.dishType === 'staple');
@@ -592,12 +623,9 @@ export function checkMealMandatory(dishes: Recipe[], age: AgeGroup, mealType: Me
 
   const stapleOk = dishes.some(d => d.dishType === 'staple');
 
-  const proteinOk = dishes.some(d => {
-    if (d.dishType === 'meat' || d.dishType === 'egg') return true;
-    if (d.dishType === 'staple' && inferProteinSource(d) !== 'none') return true;
-    if (d.dishType === 'soup' && inferProteinSource(d) !== 'none') return true;
-    return false;
-  });
+  const proteinOk = isBreakfast
+    ? dishes.some(d => inferProteinSource(d) !== 'none')
+    : dishes.some(isIndependentProteinDish);
 
   const vegetableOk = dishes.some(d => {
     // 任何 vegetable 类型的菜品即算蔬菜（包括土豆丝、烧豆腐等）
@@ -647,6 +675,40 @@ export function checkMealMandatory(dishes: Recipe[], age: AgeGroup, mealType: Me
 
 /** 蛋白质类型（用于推荐排序） */
 export type ProteinType = 'red_meat' | 'poultry' | 'fish' | 'shrimp' | 'egg' | 'tofu' | 'none';
+
+function getIngredientProteinCategories(recipe: Recipe): ProteinType[] {
+  const categories = new Set<ProteinType>();
+  for (const ingredient of recipe.mainIngredients) {
+    const category = lookupFoodCategory(ingredient);
+    if (category === 'egg') categories.add('egg');
+    if (category === 'redMeat') categories.add('red_meat');
+    if (category === 'poultry') categories.add('poultry');
+    if (category === 'soyProduct') categories.add('tofu');
+    if (category === 'fishSeafood') {
+      categories.add(ingredient.includes('虾') ? 'shrimp' : 'fish');
+    }
+  }
+  return [...categories];
+}
+
+/** 根据真实主要食材返回同餐重复的蛋白质类别。 */
+export function getRepeatedProteinCategories(dishes: Recipe[]): ProteinType[] {
+  const counts = new Map<ProteinType, number>();
+  for (const dish of dishes) {
+    for (const category of getIngredientProteinCategories(dish)) {
+      counts.set(category, (counts.get(category) || 0) + 1);
+    }
+  }
+  return [...counts.entries()].filter(([, count]) => count > 1).map(([category]) => category);
+}
+
+/** 汤中的蛋花、鱼丸、虾皮或少量肉末不视为独立蛋白质菜。 */
+export function isIndependentProteinDish(recipe: Recipe): boolean {
+  if (recipe.dishType === 'soup' || recipe.dishType === 'staple' || recipe.dishType === 'dessert') {
+    return false;
+  }
+  return getIngredientProteinCategories(recipe).length > 0;
+}
 
 /** 从食谱推导蛋白质类型 */
 export function getProteinType(recipe: Recipe): ProteinType {
