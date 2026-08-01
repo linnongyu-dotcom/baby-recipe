@@ -23,6 +23,7 @@ import {
   getDifficulty,
   getVegetableColor,
   getProteinSourceType,
+  isSoupyStaple,
 } from './mealValidator';
 import { validateDayPlan } from './dayPlanValidator';
 
@@ -1093,19 +1094,6 @@ function findDayMissingCategory(plan: WeeklyPlan, category: FoodCategory): DayOf
     }
   }
   return null;
-}
-
-function isSoupyStaple(r: Recipe): boolean {
-  if (r.dishType !== 'staple') return false;
-  const name = r.name;
-  if (name.includes('馄饨')) return true;
-  if (name.includes('粥')) return true;
-  if (name.includes('汤')) return true;
-  if (name.includes('面')) {
-    const dryNoodleKeywords = ['拌面', '炸酱', '肉酱面', '凉面', '炒面'];
-    if (!dryNoodleKeywords.some(k => name.includes(k))) return true;
-  }
-  return false;
 }
 
 function hasVegetables(r: Recipe): boolean {
