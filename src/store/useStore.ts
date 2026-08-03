@@ -142,7 +142,8 @@ export const useStore = create<AppState>()(
           { ...state.settings, babyAge: effectiveAge },
           state.customRecipes,
           usedRecipes,
-          mealType
+          mealType,
+          state.weeklyPlan[day],
         );
 
         set((s) => ({
