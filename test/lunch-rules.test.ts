@@ -1,0 +1,104 @@
+import type { AgeGroup, DishType, Recipe, UserSettings } from '../src/types';
+import { enforceLunchRules, generateWeeklyPlan, regenerateMeal } from '../src/utils/recipeGenerator';
+import {
+  checkMealMandatory,
+  getRepeatedProteinCategories,
+  getVegetableIngredients,
+  isIndependentProteinDish,
+} from '../src/utils/mealValidator';
+
+function dish(name: string, mainIngredients: string[], dishType: DishType): Recipe {
+  return {
+    id: name,
+    name,
+    mainIngredients,
+    dishType,
+    ingredients: [],
+    steps: [],
+    ageGroups: ['1-2y', '2-3y', '3-5y'],
+    tags: [],
+    category: '',
+    nutrition: '',
+  };
+}
+
+const rice = dish('白米饭', ['大米'], 'staple');
+const beefRice = dish('牛肉焖饭', ['大米', '牛肉'], 'staple');
+const beef = dish('红烧牛肉', ['牛肉'], 'meat');
+const pork = dish('清炖猪肉', ['猪肉'], 'meat');
+const fish = dish('清蒸鲈鱼', ['鲈鱼'], 'meat');
+const egg = dish('番茄炒蛋', ['番茄', '鸡蛋'], 'egg');
+const eggSoup = dish('番茄蛋花汤', ['番茄', '鸡蛋'], 'soup');
+const vegetable = dish('清炒西兰花', ['西兰花'], 'vegetable');
+const pools: Record<DishType, Recipe[]> = {
+  staple: [rice, beefRice],
+  meat: [beef, pork, fish],
+  vegetable: [vegetable],
+  soup: [eggSoup],
+  egg: [egg],
+  dessert: [],
+};
+
+let passed = 0;
+const failures: string[] = [];
+function test(name: string, condition: boolean): void {
+  if (condition) passed++;
+  else failures.push(name);
+}
+
+const repaired = enforceLunchRules(
+  { dishes: [beefRice, eggSoup, vegetable] },
+  pools,
+  '2-3y',
+  new Set(),
+  [],
+);
+test('含肉主食和汤不能替代独立蛋白菜', repaired.dishes.some(isIndependentProteinDish));
+test('最终午餐包含主食、独立蛋白菜和蔬菜', checkMealMandatory(repaired.dishes, '2-3y', 'lunch').allOk);
+test('最终午餐蔬菜来自真实主要食材', repaired.dishes.some(item => getVegetableIngredients(item).length > 0));
+test('最终午餐没有重复蛋白质食材', getRepeatedProteinCategories(repaired.dishes).length === 0);
+
+const afterBeefBreakfast = enforceLunchRules(
+  { dishes: [beefRice, beef, vegetable] },
+  pools,
+  '2-3y',
+  new Set(),
+  [dish('早餐牛肉饼', ['牛肉'], 'meat')],
+);
+test('早餐有牛肉时午餐避开牛肉', !afterBeefBreakfast.dishes.some(item => item.mainIngredients.includes('牛肉')));
+
+const fallback = enforceLunchRules(
+  { dishes: [rice, vegetable] },
+  pools,
+  '2-3y',
+  new Set([beef.id, pork.id]),
+  [],
+);
+test('未使用红肉耗尽后回退完整合规池', fallback.dishes.some(item => item.id === beef.id || item.id === pork.id));
+
+for (const age of ['1-2y', '2-3y', '3-5y'] as AgeGroup[]) {
+  const settings: UserSettings = { babyAge: age, allergies: [], dislikes: [], likes: [] };
+  for (let run = 0; run < 4; run++) {
+    const plan = generateWeeklyPlan(settings);
+    for (const day of Object.values(plan)) {
+      test(`${age} 周计划午餐结构合规`, checkMealMandatory(day.lunch.dishes, age, 'lunch').allOk);
+      test(`${age} 周计划午餐有独立蛋白菜`, day.lunch.dishes.some(isIndependentProteinDish));
+      test(`${age} 周计划午餐蛋白不重复`, getRepeatedProteinCategories(day.lunch.dishes).length === 0);
+    }
+    const context = plan.monday;
+    const used = Object.values(plan).flatMap(day => [
+      ...day.breakfast.dishes,
+      ...day.lunch.dishes,
+      ...day.dinner.dishes,
+    ]);
+    const refreshed = regenerateMeal(settings, [], used, 'lunch', context);
+    test(`${age} 午餐刷新结构合规`, checkMealMandatory(refreshed.dishes, age, 'lunch').allOk);
+    test(`${age} 午餐刷新蛋白不重复`, getRepeatedProteinCategories(refreshed.dishes).length === 0);
+  }
+}
+
+if (failures.length) {
+  console.error(`失败 ${failures.length} 项：\n${failures.map(name => `- ${name}`).join('\n')}`);
+  process.exit(1);
+}
+console.log(`通过 ${passed} 项午餐专项规则测试。`);
