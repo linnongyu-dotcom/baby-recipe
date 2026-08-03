@@ -25,8 +25,10 @@ import {
   getProteinSourceType,
   isSoupyStaple,
   getRepeatedProteinCategories,
+  getRepeatedVegetableIngredients,
   getVegetableIngredients,
   isIndependentProteinDish,
+  getIngredientProteinCategories,
 } from './mealValidator';
 import { validateDayPlan } from './dayPlanValidator';
 
@@ -134,6 +136,13 @@ export function generateWeeklyPlan(settings: UserSettings, customRecipes: Recipe
         settings.babyAge,
         weekUsedIds,
         plan[day].breakfast.dishes,
+      );
+      plan[day].dinner = enforceDinnerRules(
+        plan[day].dinner,
+        availableRecipes,
+        settings.babyAge,
+        weekUsedIds,
+        plan[day].lunch.dishes,
       );
     }
   }
@@ -624,8 +633,6 @@ function createDinnerPlan(
     !r.name.includes('红烧') && !r.name.includes('炸') &&
     !r.name.includes('糖醋') && !r.name.includes('烤')
   );
-  const soupPool = filterUnused(availableRecipes.soup).filter(isLunchOrDinner);
-
   // 排除午餐已用的蛋白质来源
   const lunchProteins = new Set<string>();
   for (const dish of lunchPlan.dishes) {
@@ -643,21 +650,20 @@ function createDinnerPlan(
     dayUsedStapleNames.add(staple.name);
   }
 
-  const stapleHasProtein = staple ? inferProteinSource(staple) !== 'none' : false;
   const stapleHasVeggie = staple ? hasVegetables(staple) : false;
   // 如果主食含蛋白质，记录类型
-  if (staple && stapleHasProtein) {
+  if (staple && inferProteinSource(staple) !== 'none') {
     const pt = getProteinSourceType(staple);
     if (pt !== 'none') usedProteinTypes.add(pt);
   }
 
-  // ===== 步骤2：选蛋白质（清淡优先：蛋类 > 鱼类 > 豆制品 > 禽肉） =====
-  if (!stapleHasProtein) {
+  // ===== 步骤2：主食中的少量肉蛋不能替代独立轻蛋白菜 =====
+  {
     let proteinCandidates: Recipe[] = [
       ...nonStaple(eggPool),
       ...nonStaple(meatPool.filter(r => isEasyDigest(r))),
-      ...nonStaple(soupPool.filter(r => inferProteinSource(r) !== 'none' && isEasyDigest(r))),
-    ];
+      ...nonStaple(safeVegPool.filter(r => isEasyDigest(r))),
+    ].filter(isIndependentProteinDish);
     // 排除午餐已用的蛋白质类型 和 全天已追踪的类型
     proteinCandidates = proteinCandidates.filter(r => {
       const pt = getProteinSourceType(r);
@@ -673,14 +679,18 @@ function createDinnerPlan(
     proteinCandidates = sortByDinnerProtein(proteinCandidates);
     proteinCandidates = proteinCandidates.filter(r => !selected.some(d => d.id === r.id));
 
-    let protein = pickWeightedRecipe(proteinCandidates);
+    const bestType = proteinCandidates[0] ? getProteinType(proteinCandidates[0]) : 'none';
+    let protein = pickWeightedRecipe(proteinCandidates.filter(r => getProteinType(r) === bestType));
 
     // 兜底
     if (!protein) {
-      protein = pickWeightedRecipe(sortByDinnerProtein([
+      const fallbackPool = sortByDinnerProtein([
         ...availableRecipes.egg.filter(r => !r.name.includes('蛋黄')),
         ...availableRecipes.meat.filter(r => isEasyDigest(r)),
-      ]));
+        ...availableRecipes.vegetable.filter(r => isEasyDigest(r)),
+      ].filter(isIndependentProteinDish));
+      const fallbackType = fallbackPool[0] ? getProteinType(fallbackPool[0]) : 'none';
+      protein = pickWeightedRecipe(fallbackPool.filter(r => getProteinType(r) === fallbackType));
     }
 
     if (protein && !selected.some(d => d.id === protein.id)) {
@@ -730,7 +740,7 @@ function createDinnerPlan(
 
   if (final.length > limit.max) final = limitDishCount(final, limit.max);
 
-  return { dishes: final };
+  return enforceDinnerRules({ dishes: final }, availableRecipes, age, usedIds, lunchPlan.dishes);
 }
 
 // ============================================================
@@ -1377,6 +1387,112 @@ export function enforceLunchRules(
   return { dishes: base };
 }
 
+const LIGHT_DINNER_TYPES = new Set(['fish', 'shrimp', 'poultry', 'tofu', 'egg']);
+
+function isLightDinnerProtein(recipe: Recipe): boolean {
+  const categories = getIngredientProteinCategories(recipe);
+  return isIndependentProteinDish(recipe)
+    && categories.length > 0
+    && categories.every(category => LIGHT_DINNER_TYPES.has(category));
+}
+
+function pickDinnerProtein(candidates: Recipe[], usedIds: Set<string>, companions: Recipe[]): Recipe | null {
+  const compliant = candidates.filter(recipe =>
+    isLightDinnerProtein(recipe)
+    && getMealSuitable(recipe).includes('dinner')
+    && !hasStapleIngredients(recipe)
+    && getRepeatedProteinCategories([...companions, recipe]).length === 0
+  );
+  // 优先本周未使用；耗尽后必须回到完整轻蛋白池，不能退化成红肉或纯素晚餐。
+  const unused = compliant.filter(recipe => !usedIds.has(recipe.id));
+  const ranked = sortByDinnerProtein(unused.length > 0 ? unused : compliant);
+  if (ranked.length === 0) return null;
+  const bestType = getProteinType(ranked[0]);
+  return pickWeightedRecipe(ranked.filter(recipe => getProteinType(recipe) === bestType));
+}
+
+/**
+ * 所有通用后处理完成后的晚餐唯一保障入口。
+ * 收敛为主食 + 独立轻蛋白菜 + 真蔬菜，并在轻蛋白完全不可用时才允许清淡红肉兜底。
+ */
+export function enforceDinnerRules(
+  meal: MealPlan,
+  availableRecipes: Record<DishType, Recipe[]>,
+  age: AgeGroup,
+  usedIds: Set<string>,
+  lunchDishes: Recipe[] = [],
+): MealPlan {
+  if (!isAge12Plus(age)) return meal;
+  const suitable = (recipe: Recipe): boolean => getMealSuitable(recipe).includes('dinner');
+  const original = meal.dishes.filter(dish => dish.dishType !== 'dessert' && suitable(dish));
+  const allLight = [...availableRecipes.meat, ...availableRecipes.egg, ...availableRecipes.vegetable]
+    .filter(recipe => suitable(recipe) && isLightDinnerProtein(recipe) && isEasyDigest(recipe));
+
+  // 优先保留不含蛋白质的主食，为独立轻蛋白菜留出不重复的空间。
+  let staple = original.find(dish =>
+    dish.dishType === 'staple' && getIngredientProteinCategories(dish).length === 0
+  );
+  if (!staple) {
+    const staples = availableRecipes.staple.filter(recipe => suitable(recipe) && !isYolkOnlyRecipe(recipe));
+    staple = pickWeightedRecipe(staples.filter(recipe =>
+      !usedIds.has(recipe.id) && getIngredientProteinCategories(recipe).length === 0
+    )) || pickWeightedRecipe(staples.filter(recipe => getIngredientProteinCategories(recipe).length === 0))
+      || original.find(dish => dish.dishType === 'staple')
+      || pickWeightedRecipe(staples) || undefined;
+  }
+
+  let base: Recipe[] = staple ? [staple] : [];
+  const lunchTypes = new Set(lunchDishes.flatMap(getIngredientProteinCategories));
+  let protein = original.find(dish =>
+    isLightDinnerProtein(dish)
+    && getRepeatedProteinCategories([...base, dish]).length === 0
+    && !getIngredientProteinCategories(dish).some(type => lunchTypes.has(type))
+  );
+  if (!protein) {
+    const complementary = allLight.filter(dish =>
+      !getIngredientProteinCategories(dish).some(type => lunchTypes.has(type))
+    );
+    protein = pickDinnerProtein(complementary, usedIds, base)
+      || pickDinnerProtein(allLight, usedIds, base)
+      || undefined;
+  }
+
+  // 极端受限时才用清淡红肉，且仍必须是独立菜而非汤或主食配料。
+  if (!protein && allLight.length === 0) {
+    const redFallback = availableRecipes.meat.filter(recipe =>
+      suitable(recipe) && isIndependentProteinDish(recipe)
+      && getProteinType(recipe) === 'red_meat' && isEasyDigest(recipe)
+      && getRepeatedProteinCategories([...base, recipe]).length === 0
+    );
+    protein = pickWeightedRecipe(redFallback.filter(recipe => !usedIds.has(recipe.id)))
+      || pickWeightedRecipe(redFallback) || undefined;
+  }
+  if (protein) base.push(protein);
+
+  let vegetable = original.find(dish =>
+    dish.dishType !== 'staple' && !isIndependentProteinDish(dish)
+    && getVegetableIngredients(dish).length > 0
+    && !getIngredientProteinCategories(dish).includes('red_meat')
+    && getRepeatedProteinCategories([...base, dish]).length === 0
+    && getRepeatedVegetableIngredients([...base, dish]).length === 0
+  );
+  if (!vegetable) {
+    const vegetables = availableRecipes.vegetable.filter(dish =>
+      suitable(dish) && getVegetableIngredients(dish).length > 0
+      && getIngredientProteinCategories(dish).length === 0
+      && getRepeatedVegetableIngredients([...base, dish]).length === 0
+    );
+    vegetable = pickWeightedRecipe(vegetables.filter(dish => !usedIds.has(dish.id)))
+      || pickWeightedRecipe(vegetables) || undefined;
+  }
+  if (vegetable) base.push(vegetable);
+
+  // max=3 时自然舍弃汤和额外素菜，永不挤掉唯一主食、轻蛋白或蔬菜。
+  base = base.slice(0, getMealDishLimit(age, 'dinner').max);
+  for (const dish of base) usedIds.add(dish.id);
+  return { dishes: base };
+}
+
 // ============================================================
 // 公共API（保持向后兼容）
 // ============================================================
@@ -1452,7 +1568,14 @@ export function regenerateMeal(
         mealContext?.breakfast?.dishes || [],
       );
     case 'dinner':
-      return createDinnerPlan(availableRecipes, usedIds, age, dayUsedStapleNames, { dishes: [] }, new Set<string>());
+      return createDinnerPlan(
+        availableRecipes,
+        usedIds,
+        age,
+        dayUsedStapleNames,
+        mealContext?.lunch || { dishes: [] },
+        new Set<string>(),
+      );
   }
 }
 

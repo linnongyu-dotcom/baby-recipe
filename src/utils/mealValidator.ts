@@ -676,7 +676,7 @@ export function checkMealMandatory(dishes: Recipe[], age: AgeGroup, mealType: Me
 /** 蛋白质类型（用于推荐排序） */
 export type ProteinType = 'red_meat' | 'poultry' | 'fish' | 'shrimp' | 'egg' | 'tofu' | 'none';
 
-function getIngredientProteinCategories(recipe: Recipe): ProteinType[] {
+export function getIngredientProteinCategories(recipe: Recipe): ProteinType[] {
   const categories = new Set<ProteinType>();
   for (const ingredient of recipe.mainIngredients) {
     const category = lookupFoodCategory(ingredient);
@@ -746,14 +746,14 @@ const LUNCH_PROTEIN_PRIORITY: Record<ProteinType, number> = {
   none: 0,
 };
 
-/** 晚餐蛋白质优先级（高到低）：蛋类 > 鱼类 > 豆制品 > 禽肉 > 红肉碎末 > 大块红肉 */
+/** 晚餐蛋白质优先级（高到低）：鱼 > 虾 > 禽肉 > 豆制品 > 蛋；红肉仅作最终兜底。 */
 const DINNER_PROTEIN_PRIORITY: Record<ProteinType, number> = {
-  egg: 5,
-  fish: 4,
-  tofu: 4,
-  shrimp: 3,
-  poultry: 3,
-  red_meat: 1, // 红肉优先级最低，但允许碎末
+  fish: 6,
+  shrimp: 5,
+  poultry: 4,
+  tofu: 3,
+  egg: 2,
+  red_meat: 1,
   none: 0,
 };
 
@@ -773,6 +773,59 @@ export function sortByDinnerProtein(recipes: Recipe[]): Recipe[] {
     const pb = DINNER_PROTEIN_PRIORITY[getProteinType(b)];
     return pb - pa;
   });
+}
+
+export interface DinnerValidationResult extends MealValidationResult {
+  /** 午晚餐是否使用了相同的真实蛋白质类别。 */
+  lunchProteinOverlap: ProteinType[];
+}
+
+/**
+ * 校验 12 月龄以上晚餐的最终结构。轻蛋白候选存在时，红肉不是合法兜底。
+ * 该入口只读取 mainIngredients 判断蛋白质和蛋类，避免菜名/dishType 误判。
+ */
+export function validateDinnerRules(
+  dishes: Recipe[],
+  age: AgeGroup,
+  lunchDishes: Recipe[] = [],
+  hasLightProteinCandidates = true,
+): DinnerValidationResult {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  if (!isAge12Plus(age)) return { valid: true, errors, warnings, lunchProteinOverlap: [] };
+
+  const staples = dishes.filter(dish => dish.dishType === 'staple');
+  const independent = dishes.filter(isIndependentProteinDish);
+  const light = independent.filter(dish =>
+    getIngredientProteinCategories(dish).some(type => type !== 'red_meat')
+    && !getIngredientProteinCategories(dish).includes('red_meat')
+  );
+  const hasRedMeat = dishes.some(dish => getIngredientProteinCategories(dish).includes('red_meat'));
+  const eggDishCount = dishes.filter(dish => getIngredientProteinCategories(dish).includes('egg')).length;
+  const repeated = getRepeatedProteinCategories(dishes);
+  const lunchTypes = new Set(lunchDishes.flatMap(getIngredientProteinCategories));
+  const dinnerTypes = new Set(dishes.flatMap(getIngredientProteinCategories));
+  const lunchProteinOverlap = [...dinnerTypes].filter(type => lunchTypes.has(type));
+
+  if (staples.length !== 1) errors.push(`晚餐必须有且只有一份主食（当前 ${staples.length} 份）`);
+  if (light.length === 0 && (hasLightProteinCandidates || independent.length === 0)) {
+    errors.push('晚餐缺少独立轻蛋白质菜');
+  }
+  if (!dishes.some(dish => getVegetableIngredients(dish).length > 0)) errors.push('晚餐缺少真正的蔬菜');
+  if (hasRedMeat && hasLightProteinCandidates) errors.push('存在合规轻蛋白候选时晚餐不得安排红肉');
+  if (hasRedMeat && light.length > 0) errors.push('晚餐不得堆叠轻蛋白与红肉');
+  if (independent.length > 1) errors.push('晚餐不得出现两道主要蛋白质菜');
+  if (eggDishCount > 1) errors.push('同一份晚餐最多一道含蛋菜');
+  if (repeated.length > 0) errors.push(`晚餐真实蛋白质食材重复：${repeated.join('、')}`);
+  if (dishes.some(isSoupyStaple) && dishes.some(dish => dish.dishType === 'soup')) {
+    errors.push('带汤主食不能再搭配独立汤品');
+  }
+  const limit = getMealDishLimit(age, 'dinner');
+  const count = dishes.filter(dish => dish.dishType !== 'dessert').length;
+  if (count > limit.max) errors.push(`晚餐菜品数量 ${count} 超过上限 ${limit.max}`);
+  if (lunchProteinOverlap.length > 0) warnings.push(`午晚餐蛋白质类别重复：${lunchProteinOverlap.join('、')}`);
+
+  return { valid: errors.length === 0, errors, warnings, lunchProteinOverlap };
 }
 
 /** 判断食谱是否易消化（晚餐优先） */
