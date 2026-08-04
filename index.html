@@ -31,6 +31,30 @@
     <meta name="twitter:description" content="科学搭配每一餐，让喂养更简单。" />
     <meta name="twitter:image" content="/饭小宝头像.png" />
 
+    <!-- Must run before /src/main.tsx so Zustand cannot hydrate the stale plan. -->
+    <script>
+      (() => {
+        const storageKey = 'baby-recipe-storage'
+        const startupRevision = 1
+        try {
+          const raw = localStorage.getItem(storageKey)
+          if (!raw) return
+          const persisted = JSON.parse(raw)
+          if (!persisted.state || persisted.state.mealRulesStartupRevision === startupRevision) return
+          localStorage.setItem(storageKey, JSON.stringify({
+            ...persisted,
+            state: {
+              ...persisted.state,
+              weeklyPlan: null,
+              mealRulesStartupRevision: startupRevision,
+            },
+          }))
+        } catch (error) {
+          console.warn('Unable to invalidate the stale meal plan cache.', error)
+        }
+      })()
+    </script>
+
     <script type="module">
       if (import.meta.hot?.on) {
         import.meta.hot.on('vite:error', (error) => {
