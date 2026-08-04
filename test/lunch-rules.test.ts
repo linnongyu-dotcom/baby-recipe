@@ -2,6 +2,7 @@ import type { AgeGroup, DishType, Recipe, UserSettings } from '../src/types';
 import { enforceLunchRules, generateWeeklyPlan, regenerateMeal } from '../src/utils/recipeGenerator';
 import {
   checkMealMandatory,
+  getIngredientProteinCategories,
   getRepeatedProteinCategories,
   getVegetableIngredients,
   isIndependentProteinDish,
@@ -28,6 +29,7 @@ const beef = dish('红烧牛肉', ['牛肉'], 'meat');
 const pork = dish('清炖猪肉', ['猪肉'], 'meat');
 const fish = dish('清蒸鲈鱼', ['鲈鱼'], 'meat');
 const egg = dish('番茄炒蛋', ['番茄', '鸡蛋'], 'egg');
+const boiledEgg = dish('水煮蛋', ['鸡蛋'], 'egg');
 const eggSoup = dish('番茄蛋花汤', ['番茄', '鸡蛋'], 'soup');
 const vegetable = dish('清炒西兰花', ['西兰花'], 'vegetable');
 const pools: Record<DishType, Recipe[]> = {
@@ -76,6 +78,17 @@ const fallback = enforceLunchRules(
 );
 test('未使用红肉耗尽后回退完整合规池', fallback.dishes.some(item => item.id === beef.id || item.id === pork.id));
 
+const repairedBoiledEggLunch = enforceLunchRules(
+  { dishes: [rice, boiledEgg, vegetable] },
+  pools,
+  '2-3y',
+  new Set(),
+  [],
+);
+test('午餐水煮蛋会被红肉菜替换', repairedBoiledEggLunch.dishes.some(item =>
+  isIndependentProteinDish(item) && getIngredientProteinCategories(item).includes('red_meat')
+));
+
 for (const age of ['1-2y', '2-3y', '3-5y'] as AgeGroup[]) {
   const settings: UserSettings = { babyAge: age, allergies: [], dislikes: [], likes: [] };
   for (let run = 0; run < 4; run++) {
@@ -83,6 +96,7 @@ for (const age of ['1-2y', '2-3y', '3-5y'] as AgeGroup[]) {
     for (const day of Object.values(plan)) {
       test(`${age} 周计划午餐结构合规`, checkMealMandatory(day.lunch.dishes, age, 'lunch').allOk);
       test(`${age} 周计划午餐有独立蛋白菜`, day.lunch.dishes.some(isIndependentProteinDish));
+      test(`${age} 周计划午餐优先红肉`, day.lunch.dishes.some(item => getIngredientProteinCategories(item).includes('red_meat')));
       test(`${age} 周计划午餐蛋白不重复`, getRepeatedProteinCategories(day.lunch.dishes).length === 0);
     }
     const context = plan.monday;

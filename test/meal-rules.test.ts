@@ -1,4 +1,5 @@
 import type { DishType, Recipe } from '../src/types';
+import { invalidateStaleMealPlan, MEAL_RULES_REVISION } from '../src/utils/mealPlanCache';
 import {
   checkMealMandatory,
   getMealSuitable,
@@ -7,6 +8,7 @@ import {
   getVegetableIngredients,
   isIndependentProteinDish,
   isSoupyStaple,
+  validateMealForContext,
 } from '../src/utils/mealValidator';
 
 function dish(name: string, mainIngredients: string[], dishType: DishType): Recipe {
@@ -25,6 +27,22 @@ const vegetableA = dish('炒西葫芦', ['西葫芦'], 'vegetable');
 const vegetableB = dish('清炒时蔬', ['青菜'], 'vegetable');
 
 test('早餐粥不能再配独立汤', isSoupyStaple(dish('小米粥', ['小米'], 'staple')));
+test('小米粥不能搭配西红柿蛋汤', !validateMealForContext(
+  [dish('小米粥', ['小米'], 'staple'), dish('西红柿蛋汤', ['西红柿', '鸡蛋'], 'soup')],
+  '2-3y',
+  'breakfast',
+).valid);
+
+const profile = { babies: [{ id: 'baby-1' }], settings: { allergies: ['蛋'] }, weeklyPlan: { monday: {} } };
+let stored = JSON.stringify({ state: profile, version: 42 });
+const storage = { getItem: () => stored, setItem: (_key: string, value: string) => { stored = value; } };
+test('同 schema 版本的旧规则餐单仍会失效', invalidateStaleMealPlan(storage));
+const invalidated = JSON.parse(stored);
+test('规则修订只清餐单并保留档案设置', invalidated.state.weeklyPlan === null
+  && JSON.stringify(invalidated.state.babies) === JSON.stringify(profile.babies)
+  && JSON.stringify(invalidated.state.settings) === JSON.stringify(profile.settings)
+  && invalidated.state.mealRulesRevision === MEAL_RULES_REVISION);
+test('相同规则修订不会重复迁移', !invalidateStaleMealPlan(storage));
 test('馄饨和汤面是带汤主食', ['鲜肉馄饨', '番茄汤面'].every(name => isSoupyStaple(dish(name, ['面条'], 'staple'))));
 test('干拌面和炒面不是带汤主食', ['葱油拌面', '鸡蛋炒面'].every(name => !isSoupyStaple(dish(name, ['面条'], 'staple'))));
 
