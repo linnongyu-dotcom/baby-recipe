@@ -11,7 +11,8 @@
     "check": "tsc -b --noEmit",
     "test:lunch-rules": "node scripts/run-ts-test.mjs test/lunch-rules.test.ts",
     "test:meal-rules": "node scripts/run-ts-test.mjs test/meal-rules.test.ts",
-    "test:dinner-rules": "node scripts/run-ts-test.mjs test/dinner-rules.test.ts"
+    "test:dinner-rules": "node scripts/run-ts-test.mjs test/dinner-rules.test.ts",
+    "test:vegetable-rules": "node scripts/run-ts-test.mjs test/vegetable-rules.test.ts"
   },
   "dependencies": {
     "clsx": "^2.1.1",
