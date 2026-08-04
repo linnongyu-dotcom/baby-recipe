@@ -33,7 +33,7 @@ test('小米粥不能搭配西红柿蛋汤', !validateMealForContext(
   'breakfast',
 ).valid);
 
-const profile = { babies: [{ id: 'baby-1' }], settings: { allergies: ['蛋'] }, weeklyPlan: { monday: {} } };
+const profile = { babies: [{ id: 'baby-1' }], settings: { allergies: ['蛋'] }, weeklyPlan: { monday: {} }, mealRulesRevision: 2 };
 let stored = JSON.stringify({ state: profile, version: 42 });
 const storage = { getItem: () => stored, setItem: (_key: string, value: string) => { stored = value; } };
 test('同 schema 版本的旧规则餐单仍会失效', invalidateStaleMealPlan(storage));
