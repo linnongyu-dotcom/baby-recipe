@@ -7,6 +7,7 @@ import {
   getVegetableIngredients,
   isIndependentProteinDish,
   isSoupyStaple,
+  validateMealForContext,
 } from '../src/utils/mealValidator';
 
 function dish(name: string, mainIngredients: string[], dishType: DishType): Recipe {
@@ -25,6 +26,11 @@ const vegetableA = dish('炒西葫芦', ['西葫芦'], 'vegetable');
 const vegetableB = dish('清炒时蔬', ['青菜'], 'vegetable');
 
 test('早餐粥不能再配独立汤', isSoupyStaple(dish('小米粥', ['小米'], 'staple')));
+test('小米粥不能搭配西红柿蛋汤', !validateMealForContext(
+  [dish('小米粥', ['小米'], 'staple'), dish('西红柿蛋汤', ['西红柿', '鸡蛋'], 'soup')],
+  '2-3y',
+  'breakfast',
+).valid);
 test('馄饨和汤面是带汤主食', ['鲜肉馄饨', '番茄汤面'].every(name => isSoupyStaple(dish(name, ['面条'], 'staple'))));
 test('干拌面和炒面不是带汤主食', ['葱油拌面', '鸡蛋炒面'].every(name => !isSoupyStaple(dish(name, ['面条'], 'staple'))));
 

@@ -23,6 +23,7 @@ const chicken = dish('清蒸鸡肉', ['鸡肉'], 'meat');
 const tofu = dish('香菇豆腐', ['香菇', '豆腐'], 'vegetable');
 const pork = dish('红烧肉', ['猪肉'], 'meat');
 const vegA = dish('清炒青菜', ['青菜'], 'vegetable');
+const spinach = dish('清炒菠菜', ['菠菜'], 'vegetable');
 const vegB = dish('清炒白菜', ['白菜'], 'vegetable');
 const fishBallSoup = dish('鱼丸汤', ['鱼丸'], 'soup');
 const shrimpSkinSoup = dish('紫菜虾皮汤', ['紫菜', '虾皮'], 'soup');
@@ -44,6 +45,7 @@ for (const [name, ds] of [
   ['鱼丸汤不能充当蛋白', [rice, fishBallSoup, vegA]],
   ['虾皮汤不能充当蛋白', [rice, shrimpSkinSoup, vegA]],
 ] as [string, Recipe[]][]) test(name, valid(ds).errors.some(e => e.includes('缺少独立轻蛋白')));
+test('蔬菜炒饭加清炒菠菜不能作为纯素晚餐', !valid([friedRice, spinach]).valid);
 for (const [name, protein] of [['鱼', fish], ['虾', shrimp], ['禽肉', chicken], ['豆腐', tofu]] as [string, Recipe][]) {
   test(`白饭+${name}+蔬菜通过`, valid([rice, protein, vegA]).valid);
 }
