@@ -144,6 +144,7 @@ export function generateWeeklyPlan(settings: UserSettings, customRecipes: Recipe
         weekUsedIds,
         plan[day].lunch.dishes,
       );
+      enforceVegetableDiversityRules(plan[day], availableRecipes, settings.babyAge, weekUsedIds);
     }
   }
 
@@ -927,30 +928,142 @@ function tryFixVegDiversity(
   weekUsedIds: Set<string>,
   age: AgeGroup,
 ): void {
-  const allDishes = [
-    ...dayPlan.breakfast.dishes,
-    ...dayPlan.lunch.dishes,
-    ...dayPlan.dinner.dishes,
-  ];
-  const hasDarkVeg = allDishes.some(d =>
-    d.mainIngredients.some(ing => lookupFoodCategory(ing) === 'darkVeg')
-  );
-  const hasLightVeg = allDishes.some(d =>
-    d.mainIngredients.some(ing => lookupFoodCategory(ing) === 'lightVeg')
-  );
+  enforceVegetableDiversityRules(dayPlan, availableRecipes, age, weekUsedIds, true);
+}
 
-  if (!hasDarkVeg && hasLightVeg && dayPlan.dinner.dishes.length > 0) {
-    // 尝试替换一个蔬菜或添加深色蔬菜
-    const existingIds = new Set(dayPlan.dinner.dishes.map(d => d.id));
-    const darkVegCandidates = availableRecipes.vegetable.filter(
-      r => getVegetableColor(r) === '深色' && !weekUsedIds.has(r.id) && !existingIds.has(r.id)
+const VEGETABLE_FIX_MAX_ATTEMPTS = 12;
+
+function isReplaceableVegetable(recipe: Recipe): boolean {
+  return recipe.dishType === 'vegetable'
+    && getVegetableIngredients(recipe).length > 0
+    && getIngredientProteinCategories(recipe).length === 0
+    && !hasStapleIngredients(recipe);
+}
+
+/**
+ * Final vegetable pass: first removes real-ingredient collisions within meals and
+ * across a day, then covers the missing colour by replacing an existing side.
+ * Core dishes are never removed, and bounded attempts make a restricted pool a
+ * deliberate fallback rather than a retry loop.
+ */
+export function enforceVegetableDiversityRules(
+  dayPlan: DayPlan,
+  availableRecipes: Record<DishType, Recipe[]>,
+  age: AgeGroup,
+  usedIds: Set<string> = new Set(),
+  colorOnly = false,
+): void {
+  if (!isAge12Plus(age)) return;
+  const order: MealType[] = ['dinner', 'lunch', 'breakfast'];
+  let attempts = 0;
+
+  const replaceSide = (mealType: MealType, index: number, forbidden: Set<string>, wanted?: FoodCategory): boolean => {
+    if (attempts++ >= VEGETABLE_FIX_MAX_ATTEMPTS) return false;
+    const dishes = dayPlan[mealType].dishes;
+    const old = dishes[index];
+    if (!old || !isReplaceableVegetable(old)) return false;
+    const otherIds = new Set(dishes.filter((_, i) => i !== index).map(d => d.id));
+    const candidates = availableRecipes.vegetable.filter(candidate => {
+      const vegetables = getVegetableIngredients(candidate);
+      return isReplaceableVegetable(candidate)
+        && getMealSuitable(candidate).includes(mealType)
+        && !otherIds.has(candidate.id)
+        && vegetables.every(vegetable => !forbidden.has(vegetable))
+        && (!wanted || vegetables.some(vegetable => lookupFoodCategory(vegetable) === wanted));
+    });
+    const replacement = pickWeightedRecipe(candidates.filter(candidate => !usedIds.has(candidate.id)))
+      || pickWeightedRecipe(candidates);
+    if (!replacement) return false;
+    dishes[index] = replacement;
+    usedIds.delete(old.id);
+    usedIds.add(replacement.id);
+    return true;
+  };
+
+  const replaceComposite = (mealType: MealType, index: number, forbidden: Set<string>): boolean => {
+    if (attempts++ >= VEGETABLE_FIX_MAX_ATTEMPTS) return false;
+    const dishes = dayPlan[mealType].dishes;
+    const old = dishes[index];
+    if (!old || old.dishType === 'staple' || isReplaceableVegetable(old)) return false;
+    const oldProteins = getIngredientProteinCategories(old).sort().join(',');
+    const pool = availableRecipes[old.dishType].filter(candidate =>
+      candidate.id !== old.id
+      && getMealSuitable(candidate).includes(mealType)
+      && getVegetableIngredients(candidate).every(vegetable => !forbidden.has(vegetable))
+      && getIngredientProteinCategories(candidate).sort().join(',') === oldProteins
+      && getRepeatedProteinCategories(dishes.map((dish, i) => i === index ? candidate : dish)).length === 0
     );
-    if (darkVegCandidates.length > 0) {
-      const newVeg = pickWeightedRecipe(darkVegCandidates);
-      if (newVeg) {
-        dayPlan.dinner.dishes.push(newVeg);
-        weekUsedIds.add(newVeg.id);
+    const replacement = pickWeightedRecipe(pool.filter(candidate => !usedIds.has(candidate.id)))
+      || pickWeightedRecipe(pool);
+    if (!replacement) return false;
+    dishes[index] = replacement;
+    usedIds.delete(old.id);
+    usedIds.add(replacement.id);
+    return true;
+  };
+
+  if (!colorOnly) {
+    // Hard rule: collisions between any two dishes in one meal.
+    for (const mealType of order) {
+      while (attempts < VEGETABLE_FIX_MAX_ATTEMPTS) {
+        const dishes = dayPlan[mealType].dishes;
+        const repeated = new Set(getRepeatedVegetableIngredients(dishes));
+        if (repeated.size === 0) break;
+        const index = dishes.findIndex(dish => isReplaceableVegetable(dish)
+          && getVegetableIngredients(dish).some(vegetable => repeated.has(vegetable)));
+        const forbidden = new Set(dishes.filter((_, i) => i !== index).flatMap(getVegetableIngredients));
+        if (index >= 0 && replaceSide(mealType, index, forbidden)) continue;
+        const compositeIndex = dishes.findIndex(dish => dish.dishType !== 'staple'
+          && getVegetableIngredients(dish).some(vegetable => repeated.has(vegetable)));
+        const compositeForbidden = new Set(dishes.filter((_, i) => i !== compositeIndex).flatMap(getVegetableIngredients));
+        if (compositeIndex < 0 || !replaceComposite(mealType, compositeIndex, compositeForbidden)) break;
       }
+    }
+
+    // Strong daily preference. Dinner sides yield first, then lunch and breakfast.
+    const claimed = new Set<string>();
+    for (const mealType of ['breakfast', 'lunch', 'dinner'] as MealType[]) {
+      const dishes = dayPlan[mealType].dishes;
+      const overlap = new Set(dishes.flatMap(getVegetableIngredients).filter(v => claimed.has(v)));
+      if (overlap.size) {
+        const index = dishes.findIndex(dish => isReplaceableVegetable(dish)
+          && getVegetableIngredients(dish).some(v => overlap.has(v)));
+        const allOther = new Set(order.flatMap(type => dayPlan[type].dishes)
+          .filter(dish => dish !== dishes[index]).flatMap(getVegetableIngredients));
+        if (index >= 0) {
+          replaceSide(mealType, index, allOther);
+        } else {
+          // The later occurrence is in a protected composite protein dish. Move
+          // the earlier standalone side instead of sacrificing that protein.
+          for (const earlierType of ['lunch', 'breakfast'] as MealType[]) {
+            if (earlierType === mealType) continue;
+            const earlier = dayPlan[earlierType].dishes;
+            const earlierIndex = earlier.findIndex(dish => isReplaceableVegetable(dish)
+              && getVegetableIngredients(dish).some(v => overlap.has(v)));
+            if (earlierIndex < 0) continue;
+            const forbidden = new Set(order.flatMap(type => dayPlan[type].dishes)
+              .filter(dish => dish !== earlier[earlierIndex]).flatMap(getVegetableIngredients));
+            if (replaceSide(earlierType, earlierIndex, forbidden)) break;
+          }
+        }
+      }
+      dishes.flatMap(getVegetableIngredients).forEach(v => claimed.add(v));
+    }
+  }
+
+  // Cover dark/light without growing a meal: replace a standalone side only.
+  const allVegetables = () => order.flatMap(type => dayPlan[type].dishes).flatMap(getVegetableIngredients);
+  const categories = new Set(allVegetables().map(lookupFoodCategory));
+  const wanted: FoodCategory | undefined = !categories.has('darkVeg') ? 'darkVeg'
+    : !categories.has('lightVeg') ? 'lightVeg' : undefined;
+  if (wanted) {
+    for (const mealType of order) {
+      const dishes = dayPlan[mealType].dishes;
+      const index = dishes.findIndex(isReplaceableVegetable);
+      if (index < 0) continue;
+      const forbidden = new Set(order.flatMap(type => dayPlan[type].dishes)
+        .filter(dish => dish !== dishes[index]).flatMap(getVegetableIngredients));
+      if (replaceSide(mealType, index, forbidden, wanted)) break;
     }
   }
 }
@@ -1362,12 +1475,14 @@ export function enforceLunchRules(
     getVegetableIngredients(dish).length > 0
     && !base.some(selected => selected.id === dish.id)
     && getRepeatedProteinCategories([...base, dish]).length === 0
+    && getRepeatedVegetableIngredients([...base, dish]).length === 0
   );
   if (!vegetable) {
     const vegetables = availableRecipes.vegetable.filter(dish =>
       suitable(dish)
       && getVegetableIngredients(dish).length > 0
       && getRepeatedProteinCategories([...base, dish]).length === 0
+      && getRepeatedVegetableIngredients([...base, dish]).length === 0
     );
     vegetable = pickWeightedRecipe(vegetables.filter(dish => !usedIds.has(dish.id)))
       || pickWeightedRecipe(vegetables)
@@ -1380,6 +1495,7 @@ export function enforceLunchRules(
     if (base.length >= limit || base.some(selected => selected.id === dish.id)) continue;
     if (dish.dishType === 'staple' || isIndependentProteinDish(dish)) continue;
     if (getRepeatedProteinCategories([...base, dish]).length > 0) continue;
+    if (getRepeatedVegetableIngredients([...base, dish]).length > 0) continue;
     base.push(dish);
   }
 
@@ -1556,19 +1672,22 @@ export function regenerateMeal(
   }
 
   // 1岁以上：按餐次类型生成
+  let regenerated: MealPlan;
   switch (mealType) {
     case 'breakfast':
-      return createBreakfastPlan(availableRecipes, usedIds, age, dayUsedStapleNames, new Set<string>());
+      regenerated = createBreakfastPlan(availableRecipes, usedIds, age, dayUsedStapleNames, new Set<string>());
+      break;
     case 'lunch':
-      return enforceLunchRules(
+      regenerated = enforceLunchRules(
         createLunchPlan(availableRecipes, usedIds, age, dayUsedStapleNames, new Set<string>()),
         availableRecipes,
         age,
         usedIds,
         mealContext?.breakfast?.dishes || [],
       );
+      break;
     case 'dinner':
-      return createDinnerPlan(
+      regenerated = createDinnerPlan(
         availableRecipes,
         usedIds,
         age,
@@ -1576,7 +1695,17 @@ export function regenerateMeal(
         mealContext?.lunch || { dishes: [] },
         new Set<string>(),
       );
+      break;
   }
+  // Refresh only promises same-meal vegetable uniqueness in this phase. Passing
+  // the other meals, when available, also enables the normal best-effort day pass.
+  const context: DayPlan = {
+    breakfast: mealType === 'breakfast' ? regenerated : mealContext?.breakfast || { dishes: [] },
+    lunch: mealType === 'lunch' ? regenerated : mealContext?.lunch || { dishes: [] },
+    dinner: mealType === 'dinner' ? regenerated : mealContext?.dinner || { dishes: [] },
+  };
+  enforceVegetableDiversityRules(context, availableRecipes, age, usedIds);
+  return context[mealType];
 }
 
 export function swapMeals(dayPlan: DayPlan): DayPlan {

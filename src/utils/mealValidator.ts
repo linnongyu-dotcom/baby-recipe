@@ -1,5 +1,5 @@
 import { Recipe, AgeGroup, MealType, ProteinSource, TextureLevel, AGE_TEXTURE_RULES, AGE_EGG_RULES, AGE_MEAL_STRUCTURE, NutritionTag, FoodTypeLabel, Difficulty, VegetableColor } from '../types';
-import { lookupFoodCategory, isMeatOrEggLike, isVegetableCategory, FoodCategory } from './foodDictionary';
+import { lookupFoodCategory, isMeatOrEggLike, isVegetableCategory, normalizeFoodName, FoodCategory } from './foodDictionary';
 import { isAge12Plus, is6to8m, is9to11m, isOver2 } from './ageRules';
 
 // ============================================================
@@ -186,9 +186,9 @@ export function isSoupyStaple(recipe: Recipe): boolean {
 
 /** 只返回 mainIngredients 中经食材字典确认的蔬菜。 */
 export function getVegetableIngredients(recipe: Recipe): string[] {
-  return recipe.mainIngredients.filter(ingredient =>
-    isVegetableCategory(lookupFoodCategory(ingredient))
-  );
+  return [...new Set(recipe.mainIngredients
+    .filter(ingredient => isVegetableCategory(lookupFoodCategory(ingredient)))
+    .map(normalizeFoodName))];
 }
 
 /** 返回同餐在不同菜品中重复出现的蔬菜。 */
