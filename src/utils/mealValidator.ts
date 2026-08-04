@@ -181,7 +181,9 @@ export function isSoupyStaple(recipe: Recipe): boolean {
   const dryNoodles = ['拌面', '炒面', '凉面', '炸酱面', '炸酱', '肉酱面', '肉酱'];
   if (dryNoodles.some(keyword => name.includes(keyword))) return false;
 
-  return name.includes('汤面') || (name.includes('面') && name.includes('汤'));
+  // 菜单中的面条默认是带汤的宝宝面；只有名称明确表示干拌/炒制时
+  // 才当作干主食。这样“蔬菜面条”不会再被搭配鱼丸汤等独立汤品。
+  return name.includes('面');
 }
 
 /** 只返回 mainIngredients 中经食材字典确认的蔬菜。 */
@@ -625,7 +627,9 @@ export function checkMealMandatory(dishes: Recipe[], age: AgeGroup, mealType: Me
 
   const proteinOk = isBreakfast
     ? dishes.some(d => inferProteinSource(d) !== 'none')
-    : dishes.some(isIndependentProteinDish);
+    : mealType === 'lunch'
+      ? dishes.some(isIndependentLunchMeatDish)
+      : dishes.some(isIndependentProteinDish);
 
   const vegetableOk = dishes.some(d => {
     // 任何 vegetable 类型的菜品即算蔬菜（包括土豆丝、烧豆腐等）
@@ -708,6 +712,14 @@ export function isIndependentProteinDish(recipe: Recipe): boolean {
     return false;
   }
   return getIngredientProteinCategories(recipe).length > 0;
+}
+
+/** 午餐必选的独立动物性肉菜（红肉、禽肉、鱼或虾）。 */
+export function isIndependentLunchMeatDish(recipe: Recipe): boolean {
+  if (!isIndependentProteinDish(recipe)) return false;
+  return getIngredientProteinCategories(recipe).some(category =>
+    category === 'red_meat' || category === 'poultry' || category === 'fish' || category === 'shrimp'
+  );
 }
 
 /** 从食谱推导蛋白质类型 */
@@ -808,7 +820,7 @@ export function validateMealForContext(
     if (eggCount > 1) errors.push('早餐不得出现两种主要蛋制品');
     if (dishes.some(d => !getMealSuitable(d).includes('breakfast'))) errors.push('早餐含有不适合早餐的菜品');
   } else if (mealType === 'lunch') {
-    if (!independent.length) errors.push('午餐缺少独立蛋白质菜');
+    if (!dishes.some(isIndependentLunchMeatDish)) errors.push('午餐缺少独立肉类菜');
     if (!dishes.some(d => getVegetableIngredients(d).length > 0)) errors.push('午餐缺少真正的蔬菜');
     if (candidates.hasRedMeat && !independent.some(d => getIngredientProteinCategories(d).includes('red_meat'))) errors.push('有合规红肉候选时午餐应优先独立红肉');
     if (eggCount > 1) errors.push('同一份午餐最多一道含蛋菜');
