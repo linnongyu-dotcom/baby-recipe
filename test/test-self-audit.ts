@@ -3,6 +3,7 @@
  * 覆盖所有验收标准和边界情况
  */
 import { generateWeeklyPlan, regenerateMeal, swapMeals } from '../src/utils/recipeGenerator';
+import { withSeed } from './helpers/seededRandom';
 import { UserSettings, AgeGroup, Recipe, MealType } from '../src/types';
 import { inferProteinSource, isTextureForbiddenForAge12Plus, checkMealMandatory } from '../src/utils/mealValidator';
 import { lookupFoodCategory } from '../src/utils/foodDictionary';
@@ -84,7 +85,8 @@ function runFullTest(age: AgeGroup, rounds: number): TestSuite {
 
   for (let r = 0; r < rounds; r++) {
     const settings: UserSettings = { babyAge: age, allergies: [], dislikes: [], likes: [] };
-    const plan = generateWeeklyPlan(settings);
+    const seed = 800000 + ['6-8m', '9-11m', '1-2y', '2-3y', '3-5y'].indexOf(age) * 100 + r;
+    const plan = withSeed(seed, () => generateWeeklyPlan(settings));
 
     for (let di = 0; di < DAYS.length; di++) {
       const dayPlan = plan[DAYS[di]];
@@ -251,7 +253,7 @@ function runFullTest(age: AgeGroup, rounds: number): TestSuite {
   // =========================================
   if (is12Plus) {
     const settings: UserSettings = { babyAge: age, allergies: [], dislikes: [], likes: [] };
-    const plan = generateWeeklyPlan(settings);
+    const plan = withSeed(890000 + ['6-8m', '9-11m', '1-2y', '2-3y', '3-5y'].indexOf(age), () => generateWeeklyPlan(settings));
 
     for (const mealType of MEALS) {
       const meal = plan.monday[mealType];
@@ -261,7 +263,7 @@ function runFullTest(age: AgeGroup, rounds: number): TestSuite {
         ...plan.monday.dinner.dishes,
       ].filter(d => !meal.dishes.some(md => md.id === d.id));
 
-      const regenerated = regenerateMeal(settings, [], usedRecipes, mealType);
+      const regenerated = withSeed(895000 + ['breakfast', 'lunch', 'dinner'].indexOf(mealType), () => regenerateMeal(settings, [], usedRecipes, mealType));
       const rd = regenerated.dishes;
 
       if (rd.length === 0) continue;

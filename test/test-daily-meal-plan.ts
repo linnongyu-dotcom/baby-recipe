@@ -207,9 +207,7 @@ for (const age of ageGroups) {
       // 4f. 奶制品不应出现在三餐中
       const hasDairyInMeals = allDishes.some(d => d.mainIngredients.some(ing => lookupFoodCategory(ing) === 'dairy'));
       // 注意：早餐可能会有奶制品作为配料，这个不算严重问题
-      if (hasDairyInMeals) {
-        issues.push(`[${day}] 三餐中包含奶制品食材（非强制问题，仅提示）`);
-      }
+      if (hasDairyInMeals) console.log(`    ℹ️ [${day}] 三餐含奶制品配料（diagnostic，不计为失败）`);
 
       // 5. 综合校验结果
       if (dayCheck.errors.length > 0) {
@@ -293,3 +291,5 @@ for (const [age, stats] of Object.entries(byAge)) {
 }
 
 console.log(`\n通过率: ${((totalPass / (totalPass + totalFail)) * 100).toFixed(1)}%`);
+
+if (totalFail > 0) process.exit(1);
