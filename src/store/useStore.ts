@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { UserSettings, WeeklyPlan, Recipe, DayOfWeek, MealType, MealPlan, FoodRecord, BabyProfile, AgeGroup } from '../types';
-import { generateWeeklyPlan, regenerateMeal, regenerateDish, swapMeals } from '../utils/recipeGenerator';
+import { generateWeeklyPlan, regenerateMeal, replaceDishInMeal, swapMeals } from '../utils/recipeGenerator';
 import { calcAge, generateBabyId, estimateBirthDateFromAgeGroup } from '../utils/babyProfile';
 
 interface AppState {
@@ -64,6 +64,14 @@ const defaultSettings: UserSettings = {
   dislikes: [],
   likes: [],
 };
+
+export const PERSIST_VERSION = 41;
+
+/** v41 规则缓存迁移：仅使旧餐单失效，完整保留用户档案与偏好数据。 */
+export function migrateMealRuleCache<T extends Record<string, any> | null | undefined>(state: T): T {
+  if (!state) return state;
+  return { ...state, weeklyPlan: null } as T;
+}
 
 // 获取当前有效的 AgeGroup（优先从 baby 档案计算，回退到 settings）
 function getEffectiveBabyAge(state: { babies: BabyProfile[]; currentBabyId: string | null; settings: UserSettings }): AgeGroup | null {
@@ -178,26 +186,22 @@ export const useStore = create<AppState>()(
           }
         }
 
-        const newDish = regenerateDish(
+        const newMeal = replaceDishInMeal(
           { ...state.settings, babyAge: effectiveAge },
           state.customRecipes,
           usedRecipes,
-          targetDish.dishType
+          mealType,
+          mealPlan,
+          dishIndex,
+          dayPlan,
         );
-        if (!newDish) return;
-
-        const newDishes = [...mealPlan.dishes];
-        newDishes[dishIndex] = newDish;
 
         set((s) => ({
           weeklyPlan: {
             ...s.weeklyPlan!,
             [day]: {
               ...s.weeklyPlan![day],
-              [mealType]: {
-                ...s.weeklyPlan![day][mealType],
-                dishes: newDishes,
-              },
+                [mealType]: newMeal,
             },
           },
         }));
@@ -228,7 +232,9 @@ export const useStore = create<AppState>()(
         if (!weeklyPlan) return;
 
         const dayPlan = weeklyPlan[day];
-        const swapped = swapMeals(dayPlan);
+        const effectiveAge = getEffectiveBabyAge(get());
+        if (!effectiveAge) return;
+        const swapped = swapMeals(dayPlan, effectiveAge);
 
         set((state) => ({
           weeklyPlan: {
@@ -380,8 +386,10 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'baby-recipe-storage',
-      version: 40,
+      version: PERSIST_VERSION,
       migrate: (persistedState: any, version: number) => {
+        // v41: 刷新/换菜统一规则后，旧规则生成的周餐单不可继续展示。
+        if (version >= 40 && version < 41) return migrateMealRuleCache(persistedState);
         if (version < 30) {
           return {
             settings: persistedState?.settings || defaultSettings,

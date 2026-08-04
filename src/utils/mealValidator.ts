@@ -781,6 +781,44 @@ export interface DinnerValidationResult extends MealValidationResult {
 }
 
 /**
+ * 所有会写回周餐单的入口共用的餐次硬规则校验。生成器可以通过候选标记
+ * 表达“当前过滤后的池中确有红肉/轻蛋白”，但过敏、年龄及餐次适配仍由
+ * 候选过滤器负责，校验器不会为了凑数放宽这些条件。
+ */
+export function validateMealForContext(
+  dishes: Recipe[],
+  age: AgeGroup,
+  mealType: MealType,
+  dayContext: Partial<Record<MealType, { dishes: Recipe[] }>> = {},
+  candidates: { hasRedMeat?: boolean; hasLightProtein?: boolean } = {},
+): MealValidationResult {
+  const common = validateMeal(dishes, age, mealType);
+  if (!isAge12Plus(age)) return common;
+  const errors = [...common.errors];
+  const repeatedProtein = getRepeatedProteinCategories(dishes);
+  const repeatedVegetables = getRepeatedVegetableIngredients(dishes);
+  if (repeatedProtein.length) errors.push(`同餐真实蛋白质食材重复：${repeatedProtein.join('、')}`);
+  if (repeatedVegetables.length) errors.push(`同餐真实蔬菜食材重复：${repeatedVegetables.join('、')}`);
+  if (dishes.some(isSoupyStaple) && dishes.some(d => d.dishType === 'soup')) errors.push('带汤主食不能搭配独立汤');
+
+  const eggCount = dishes.filter(d => getIngredientProteinCategories(d).includes('egg')).length;
+  const independent = dishes.filter(isIndependentProteinDish);
+  if (mealType === 'breakfast') {
+    if (!dishes.some(d => inferProteinSource(d) !== 'none')) errors.push('早餐缺少适宜蛋白质');
+    if (eggCount > 1) errors.push('早餐不得出现两种主要蛋制品');
+    if (dishes.some(d => !getMealSuitable(d).includes('breakfast'))) errors.push('早餐含有不适合早餐的菜品');
+  } else if (mealType === 'lunch') {
+    if (!independent.length) errors.push('午餐缺少独立蛋白质菜');
+    if (!dishes.some(d => getVegetableIngredients(d).length > 0)) errors.push('午餐缺少真正的蔬菜');
+    if (candidates.hasRedMeat && !independent.some(d => getIngredientProteinCategories(d).includes('red_meat'))) errors.push('有合规红肉候选时午餐应优先独立红肉');
+    if (eggCount > 1) errors.push('同一份午餐最多一道含蛋菜');
+  } else {
+    return validateDinnerRules(dishes, age, dayContext.lunch?.dishes || [], candidates.hasLightProtein !== false);
+  }
+  return { valid: errors.length === 0, errors: [...new Set(errors)], warnings: common.warnings };
+}
+
+/**
  * 校验 12 月龄以上晚餐的最终结构。轻蛋白候选存在时，红肉不是合法兜底。
  * 该入口只读取 mainIngredients 判断蛋白质和蛋类，避免菜名/dishType 误判。
  */

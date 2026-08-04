@@ -29,6 +29,7 @@ import {
   getVegetableIngredients,
   isIndependentProteinDish,
   getIngredientProteinCategories,
+  validateMealForContext,
 } from './mealValidator';
 import { validateDayPlan } from './dayPlanValidator';
 
@@ -1456,14 +1457,21 @@ export function enforceLunchRules(
   }
 
   const base = staple ? [staple] : [];
+  const lunchProteinCandidates = [...availableRecipes.meat, ...availableRecipes.egg].filter(dish =>
+    suitable(dish) && isIndependentProteinDish(dish) && !hasStapleIngredients(dish)
+  );
+  const hasRedCandidate = lunchProteinCandidates.some(dish =>
+    getProteinType(dish) === 'red_meat' && (!avoidBeef || !containsBeef(dish))
+  );
   let protein = original.find(dish =>
     isIndependentProteinDish(dish)
     && (!avoidBeef || !containsBeef(dish))
+    && (!hasRedCandidate || getProteinType(dish) === 'red_meat')
     && getRepeatedProteinCategories([...base, dish]).length === 0
   );
   if (!protein) {
     protein = pickLunchProtein(
-      [...availableRecipes.meat, ...availableRecipes.egg],
+      lunchProteinCandidates,
       usedIds,
       base,
       avoidBeef,
@@ -1664,16 +1672,19 @@ export function regenerateMeal(
   }
 
   const availableRecipes = filterRecipes(settings, customRecipes);
-  const usedIds = new Set(usedRecipes.map(r => r.id));
+  const originalUsedIds = new Set(usedRecipes.map(r => r.id));
   const dayUsedStapleNames = new Set<string>();
 
   if (is9to11m(age)) {
-    return createCompositeMeal(availableRecipes, usedIds, mealType);
+    return createCompositeMeal(availableRecipes, originalUsedIds, mealType);
   }
 
-  // 1岁以上：按餐次类型生成
-  let regenerated: MealPlan;
-  switch (mealType) {
+  // 1岁以上：有限重试。每次使用独立 usedIds，失败候选不会污染下一轮。
+  const MAX_REFRESH_ATTEMPTS = 8;
+  for (let attempt = 0; attempt < MAX_REFRESH_ATTEMPTS; attempt++) {
+    const usedIds = new Set(originalUsedIds);
+    let regenerated: MealPlan;
+    switch (mealType) {
     case 'breakfast':
       regenerated = createBreakfastPlan(availableRecipes, usedIds, age, dayUsedStapleNames, new Set<string>());
       break;
@@ -1696,20 +1707,59 @@ export function regenerateMeal(
         new Set<string>(),
       );
       break;
-  }
-  // Refresh only promises same-meal vegetable uniqueness in this phase. Passing
-  // the other meals, when available, also enables the normal best-effort day pass.
-  const context: DayPlan = {
+    }
+    const context: DayPlan = {
     breakfast: mealType === 'breakfast' ? regenerated : mealContext?.breakfast || { dishes: [] },
     lunch: mealType === 'lunch' ? regenerated : mealContext?.lunch || { dishes: [] },
     dinner: mealType === 'dinner' ? regenerated : mealContext?.dinner || { dishes: [] },
-  };
-  enforceVegetableDiversityRules(context, availableRecipes, age, usedIds);
-  return context[mealType];
+    };
+    enforceVegetableDiversityRules(context, availableRecipes, age, usedIds);
+    const hasRedMeat = [...availableRecipes.meat, ...availableRecipes.egg].some(r =>
+      getMealSuitable(r).includes('lunch') && isIndependentProteinDish(r) && getProteinType(r) === 'red_meat');
+    const hasLightProtein = [...availableRecipes.meat, ...availableRecipes.egg, ...availableRecipes.vegetable].some(isLightDinnerProtein);
+    if (validateMealForContext(context[mealType].dishes, age, mealType, context, { hasRedMeat, hasLightProtein }).valid) {
+      return context[mealType];
+    }
+  }
+  // 明确安全兜底：沿用当前已验证的餐，而不是把失败的随机候选写回 store。
+  const existing = mealContext?.[mealType];
+  if (existing && validateMealForContext(existing.dishes, age, mealType, mealContext).valid) return { dishes: [...existing.dishes] };
+  throw new Error(`无法生成符合${mealType}上下文规则的安全餐单`);
 }
 
-export function swapMeals(dayPlan: DayPlan): DayPlan {
-  return { ...dayPlan, lunch: dayPlan.dinner, dinner: dayPlan.lunch };
+/** 尝试单菜替换；只有临时整餐通过统一上下文校验才返回，否则安全重生成整餐。 */
+export function replaceDishInMeal(
+  settings: UserSettings,
+  customRecipes: Recipe[],
+  usedRecipes: Recipe[],
+  mealType: MealType,
+  meal: MealPlan,
+  dishIndex: number,
+  dayContext: Partial<DayPlan>,
+): MealPlan {
+  const target = meal.dishes[dishIndex];
+  if (!target || !settings.babyAge) return meal;
+  const available = filterRecipes(settings, customRecipes);
+  const usedIds = new Set(usedRecipes.map(r => r.id));
+  const pool = available[target.dishType];
+  const ordered = [...pool.filter(r => !usedIds.has(r.id)), ...pool.filter(r => usedIds.has(r.id))];
+  const seen = new Set<string>();
+  for (const candidate of ordered) {
+    if (seen.has(candidate.id) || candidate.id === target.id) continue;
+    seen.add(candidate.id);
+    const dishes = meal.dishes.map((dish, index) => index === dishIndex ? candidate : dish);
+    const context = { ...dayContext, [mealType]: { dishes } };
+    if (validateMealForContext(dishes, settings.babyAge, mealType, context).valid) return { dishes };
+  }
+  return regenerateMeal(settings, customRecipes, usedRecipes, mealType, dayContext);
+}
+
+export function swapMeals(dayPlan: DayPlan, age?: AgeGroup): DayPlan {
+  const swapped = { ...dayPlan, lunch: dayPlan.dinner, dinner: dayPlan.lunch };
+  if (!age) return swapped;
+  const lunch = validateMealForContext(swapped.lunch.dishes, age, 'lunch', swapped);
+  const dinner = validateMealForContext(swapped.dinner.dishes, age, 'dinner', swapped);
+  return lunch.valid && dinner.valid ? swapped : dayPlan;
 }
 
 export function createCustomRecipe(
