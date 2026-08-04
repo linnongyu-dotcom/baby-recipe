@@ -13,7 +13,10 @@
     "test:meal-rules": "node scripts/run-ts-test.mjs test/meal-rules.test.ts",
     "test:dinner-rules": "node scripts/run-ts-test.mjs test/dinner-rules.test.ts",
     "test:vegetable-rules": "node scripts/run-ts-test.mjs test/vegetable-rules.test.ts",
-    "test:meal-refresh-rules": "node scripts/run-ts-test.mjs test/meal-refresh-rules.test.ts"
+    "test:meal-refresh-rules": "node scripts/run-ts-test.mjs test/meal-refresh-rules.test.ts",
+    "test:breakfast-rules": "node scripts/run-ts-test.mjs test/breakfast-rules.test.ts",
+    "test:meal-stress": "node scripts/run-ts-test.mjs test/meal-generation-stress.test.ts",
+    "test:meal-all": "npm run test:meal-rules && npm run test:breakfast-rules && npm run test:lunch-rules && npm run test:dinner-rules && npm run test:vegetable-rules && npm run test:meal-refresh-rules && npm run test:meal-stress && node scripts/run-ts-test.mjs test/test-generator.ts && node scripts/run-ts-test.mjs test/test-self-audit.ts && node scripts/run-ts-test.mjs test/test-daily-meal-plan.ts"
   },
   "dependencies": {
     "clsx": "^2.1.1",

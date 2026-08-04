@@ -146,6 +146,94 @@ export function generateWeeklyPlan(settings: UserSettings, customRecipes: Recipe
         plan[day].lunch.dishes,
       );
       enforceVegetableDiversityRules(plan[day], availableRecipes, settings.babyAge, weekUsedIds);
+
+      // Vegetable repair may add a side after the meal structure has already
+      // converged. Re-run the structural passes once (not a retry loop), and
+      // remove an independent soup that a previous generic soup pass left next
+      // to a soupy breakfast staple.
+      const breakfast = plan[day].breakfast.dishes;
+      if (breakfast.some(dish => dish.dishType === 'staple' && isSoupyStaple(dish))) {
+        plan[day].breakfast.dishes = breakfast.filter(dish => dish.dishType !== 'soup');
+      }
+      // Keep the first occurrence of each real protein category. Generic soup
+      // completion previously produced combinations such as pork staple + beef
+      // soup (both red meat).
+      const breakfastProteins = new Set<string>();
+      plan[day].breakfast.dishes = plan[day].breakfast.dishes.filter(dish => {
+        const categories = getIngredientProteinCategories(dish);
+        if (categories.some(category => breakfastProteins.has(category))) return false;
+        categories.forEach(category => breakfastProteins.add(category));
+        return true;
+      });
+      if (!plan[day].breakfast.dishes.some(dish => inferProteinSource(dish) !== 'none')) {
+        const current = plan[day].breakfast.dishes;
+        const candidates = [...availableRecipes.egg, ...availableRecipes.meat, ...availableRecipes.soup]
+          .filter(dish => getMealSuitable(dish).includes('breakfast'))
+          .filter(dish => inferProteinSource(dish) !== 'none' && !hasStapleIngredients(dish))
+          .filter(dish => getRepeatedProteinCategories([...current, dish]).length === 0)
+          .filter(dish => !(current.some(item => isSoupyStaple(item)) && dish.dishType === 'soup'));
+        const protein = pickWeightedRecipe(candidates.filter(dish => !weekUsedIds.has(dish.id)))
+          || pickWeightedRecipe(candidates);
+        if (protein) {
+          current.push(protein);
+          weekUsedIds.add(protein.id);
+        }
+      }
+      if (getRepeatedVegetableIngredients(plan[day].breakfast.dishes).length > 0) {
+        const staple = plan[day].breakfast.dishes.find(dish => dish.dishType === 'staple');
+        const base = staple ? [staple] : [];
+        const existingProtein = plan[day].breakfast.dishes.find(dish =>
+          dish !== staple
+          && inferProteinSource(dish) !== 'none'
+          && getRepeatedProteinCategories([...base, dish]).length === 0
+          && getRepeatedVegetableIngredients([...base, dish]).length === 0
+        );
+        if (existingProtein) base.push(existingProtein);
+        if (!base.some(dish => inferProteinSource(dish) !== 'none')) {
+          const compatible = [...availableRecipes.egg, ...availableRecipes.meat, ...availableRecipes.soup]
+            .filter(dish => getMealSuitable(dish).includes('breakfast'))
+            .filter(dish => inferProteinSource(dish) !== 'none' && !hasStapleIngredients(dish))
+            .filter(dish => getRepeatedProteinCategories([...base, dish]).length === 0)
+            .filter(dish => getRepeatedVegetableIngredients([...base, dish]).length === 0)
+            .filter(dish => !(base.some(item => isSoupyStaple(item)) && dish.dishType === 'soup'));
+          const replacement = pickWeightedRecipe(compatible.filter(dish => !weekUsedIds.has(dish.id)))
+            || pickWeightedRecipe(compatible);
+          if (replacement) base.push(replacement);
+        }
+        plan[day].breakfast.dishes = base;
+      }
+      plan[day].breakfast.dishes = plan[day].breakfast.dishes.slice(
+        0,
+        getMealDishLimit(settings.babyAge, 'breakfast').max,
+      );
+      if (!plan[day].breakfast.dishes.some(dish => inferProteinSource(dish) !== 'none')) {
+        const staple = plan[day].breakfast.dishes.find(dish => dish.dishType === 'staple');
+        const base = staple ? [staple] : [];
+        const compatible = [...availableRecipes.egg, ...availableRecipes.meat, ...availableRecipes.soup]
+          .filter(dish => getMealSuitable(dish).includes('breakfast'))
+          .filter(dish => inferProteinSource(dish) !== 'none' && !hasStapleIngredients(dish))
+          .filter(dish => getRepeatedProteinCategories([...base, dish]).length === 0)
+          .filter(dish => getRepeatedVegetableIngredients([...base, dish]).length === 0)
+          .filter(dish => !(base.some(item => isSoupyStaple(item)) && dish.dishType === 'soup'));
+        const protein = pickWeightedRecipe(compatible.filter(dish => !weekUsedIds.has(dish.id)))
+          || pickWeightedRecipe(compatible);
+        if (protein) base.push(protein);
+        plan[day].breakfast.dishes = base;
+      }
+      plan[day].lunch = enforceLunchRules(
+        plan[day].lunch,
+        availableRecipes,
+        settings.babyAge,
+        weekUsedIds,
+        plan[day].breakfast.dishes,
+      );
+      plan[day].dinner = enforceDinnerRules(
+        plan[day].dinner,
+        availableRecipes,
+        settings.babyAge,
+        weekUsedIds,
+        plan[day].lunch.dishes,
+      );
     }
   }
 
@@ -1415,6 +1503,7 @@ function pickLunchProtein(
     && getMealSuitable(recipe).includes('lunch')
     && !hasStapleIngredients(recipe)
     && getRepeatedProteinCategories([...companions, recipe]).length === 0
+    && getRepeatedVegetableIngredients([...companions, recipe]).length === 0
   );
   if (avoidBeef && compliant.some(recipe => !containsBeef(recipe))) {
     compliant = compliant.filter(recipe => !containsBeef(recipe));
@@ -1468,6 +1557,7 @@ export function enforceLunchRules(
     && (!avoidBeef || !containsBeef(dish))
     && (!hasRedCandidate || getProteinType(dish) === 'red_meat')
     && getRepeatedProteinCategories([...base, dish]).length === 0
+    && getRepeatedVegetableIngredients([...base, dish]).length === 0
   );
   if (!protein) {
     protein = pickLunchProtein(
@@ -1481,6 +1571,7 @@ export function enforceLunchRules(
 
   let vegetable = original.find(dish =>
     getVegetableIngredients(dish).length > 0
+    && getIngredientProteinCategories(dish).length === 0
     && !base.some(selected => selected.id === dish.id)
     && getRepeatedProteinCategories([...base, dish]).length === 0
     && getRepeatedVegetableIngredients([...base, dish]).length === 0
@@ -1502,6 +1593,10 @@ export function enforceLunchRules(
   for (const dish of original) {
     if (base.length >= limit || base.some(selected => selected.id === dish.id)) continue;
     if (dish.dishType === 'staple' || isIndependentProteinDish(dish)) continue;
+    if (base.some(item => item.dishType === 'staple' && isSoupyStaple(item)) && dish.dishType === 'soup') continue;
+    // Optional soup/sides must not introduce a third protein source after the
+    // staple and the required independent protein have been selected.
+    if (inferProteinSource(dish) !== 'none') continue;
     if (getRepeatedProteinCategories([...base, dish]).length > 0) continue;
     if (getRepeatedVegetableIngredients([...base, dish]).length > 0) continue;
     base.push(dish);
