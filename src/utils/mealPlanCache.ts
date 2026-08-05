@@ -1,4 +1,4 @@
-// Revision 3 adds runtime repair and makes boiled eggs breakfast-only.
+// Revision 3 requires every 12m+ lunch to contain an independent meat dish.
 // Keep this in sync with the pre-hydration revision in index.html.
 export const MEAL_RULES_REVISION = 3;
 export const MEAL_PLAN_STORAGE_KEY = 'baby-recipe-storage';
