@@ -1,6 +1,6 @@
-// Revision 5 keeps the stricter lunch meat/cache invalidation rules ahead of v2 conflict branches.
+// Revision 3 adds runtime repair and makes boiled eggs breakfast-only.
 // Keep this in sync with the pre-hydration revision in index.html.
-export const MEAL_RULES_REVISION = 5;
+export const MEAL_RULES_REVISION = 3;
 export const MEAL_PLAN_STORAGE_KEY = 'baby-recipe-storage';
 
 interface PersistedMealState {
