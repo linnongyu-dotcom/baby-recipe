@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, useSearchParams, Navigate } from 'react-router-dom';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Settings, Download, ChevronDown, Loader2, Share2, Check, User } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { Button } from '@/components/common/Button';
@@ -16,6 +16,7 @@ import { downloadRecipePDF } from '@/utils/pdfGenerator';
 import { encodeShareData, decodeShareData } from '@/utils/shareUtils';
 import { analyzeDayNutrition, analyzeWeekNutrition, generateSnacks, getMilkTip } from '@/utils/nutritionEngine';
 import { BRAND, BRAND_ASSETS, setPageTitle } from '@/config/brand';
+import { weeklyPlanNeedsLunchRepair } from '@/utils/recipeGenerator';
 
 interface NutritionGuide {
   title: string;
@@ -247,6 +248,7 @@ export function RecipePage() {
   const [showWeeklyPlan, setShowWeeklyPlan] = useState(false);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
   const [expandedWeekDays, setExpandedWeekDays] = useState<Set<DayOfWeek>>(new Set());
+  const lunchRepairAttempted = useRef(false);
 
   // 从宝宝档案计算年龄
   const currentBaby = babies.find(b => b.id === currentBabyId);
@@ -349,10 +351,22 @@ export function RecipePage() {
     const planAge = settings.babyAge;
     const ageMismatch = planAge && planAge !== effectiveAgeGroup;
     
-    if (!weeklyPlan || ageMismatch) {
+    // Runtime hard stop: cache-version migration is not sufficient when an
+    // old tab, a manually edited meal, or an intermediate deployment writes
+    // an invalid plan back to storage. Rebuild the week whenever any 12m+
+    // lunch has no independent meat dish (or contains breakfast-only food).
+    const lunchNeedsRepair = weeklyPlan
+      ? weeklyPlanNeedsLunchRepair(weeklyPlan, effectiveAgeGroup)
+      : false;
+
+    if (!lunchNeedsRepair) lunchRepairAttempted.current = false;
+    if (lunchNeedsRepair && lunchRepairAttempted.current) return;
+
+    if (!weeklyPlan || ageMismatch || lunchNeedsRepair) {
+      if (lunchNeedsRepair) lunchRepairAttempted.current = true;
       generatePlan();
     }
-  }, []); // 仅在挂载时执行
+  }, [babies.length, effectiveAgeGroup, generatePlan, isInfantFeeding, isShareMode, settings.babyAge, weeklyPlan]);
 
   // 无宝宝时跳转到创建页
   if (!weeklyPlan && !isShareMode && !isInfantFeeding) {

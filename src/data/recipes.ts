@@ -2703,6 +2703,7 @@ export const recipes: Recipe[] = [
     nutrition: '水煮蛋简单营养',
     mainIngredients: ['鸡蛋'],
     dishType: 'egg',
+    mealSuitable: ['breakfast'],
   },
   {
     id: 'r247',

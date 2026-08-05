@@ -241,6 +241,18 @@ export function generateWeeklyPlan(settings: UserSettings, customRecipes: Recipe
   return plan;
 }
 
+/**
+ * Detect persisted or manually edited plans that predate/bypass the current
+ * lunch rules. The page uses this as a runtime safety net after Zustand has
+ * hydrated, so a stale meatless lunch can never remain on screen.
+ */
+export function weeklyPlanNeedsLunchRepair(plan: WeeklyPlan, age: AgeGroup): boolean {
+  if (!isAge12Plus(age)) return false;
+  return DAYS_OF_WEEK.some(day =>
+    !validateMealForContext(plan[day].lunch.dishes, age, 'lunch', plan[day]).valid
+  );
+}
+
 function trimWeeklyDishCount(plan: WeeklyPlan, babyAge: AgeGroup | null): void {
   if (!babyAge || !isAge12Plus(babyAge)) return;
   for (const day of DAYS_OF_WEEK) {

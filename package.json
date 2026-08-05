@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "check": "tsc -b --noEmit",
-    "test:lunch-rules": "node scripts/run-ts-test.mjs test/lunch-rules.test.ts",
+    "test:lunch-rules": "node scripts/run-ts-test.mjs test/lunch-rules.test.ts && node scripts/run-ts-test.mjs test/lunch-independent-meat-rules.test.ts",
     "test:meal-rules": "node scripts/run-ts-test.mjs test/meal-rules.test.ts && node test/cache-bootstrap.test.mjs",
     "test:dinner-rules": "node scripts/run-ts-test.mjs test/dinner-rules.test.ts",
     "test:vegetable-rules": "node scripts/run-ts-test.mjs test/vegetable-rules.test.ts",
