@@ -1,4 +1,5 @@
 import type { DishType, Recipe } from '../src/types';
+import { recipes } from '../src/data/recipes';
 import { invalidateStaleMealPlan, MEAL_RULES_REVISION } from '../src/utils/mealPlanCache';
 import {
   checkMealMandatory,
@@ -33,7 +34,7 @@ test('小米粥不能搭配西红柿蛋汤', !validateMealForContext(
   'breakfast',
 ).valid);
 
-const profile = { babies: [{ id: 'baby-1' }], settings: { allergies: ['蛋'] }, weeklyPlan: { monday: {} } };
+const profile = { babies: [{ id: 'baby-1' }], settings: { allergies: ['蛋'] }, weeklyPlan: { monday: {} }, mealRulesRevision: 2 };
 let stored = JSON.stringify({ state: profile, version: 42 });
 const storage = { getItem: () => stored, setItem: (_key: string, value: string) => { stored = value; } };
 test('同 schema 版本的旧规则餐单仍会失效', invalidateStaleMealPlan(storage));
@@ -58,6 +59,8 @@ test('两道西兰花蔬菜重复', getRepeatedVegetableIngredients([dish('清�
 test('蔬菜提取排除米饭肉蛋和调味料', JSON.stringify(getVegetableIngredients(dish('混合', ['西兰花', '大米', '猪肉', '鸡蛋', '酱油'], 'vegetable'))) === JSON.stringify(['西兰花']));
 test('汤菜不能伪装独立蛋白质', !isIndependentProteinDish(dish('肉末汤', ['肉末'], 'soup')));
 test('早餐蛋和正餐菜餐次适配', getMealSuitable(dish('白煮蛋', ['鸡蛋'], 'egg')).every(meal => meal === 'breakfast') && !getMealSuitable(dish('宫保鸡丁', ['鸡肉'], 'meat')).includes('breakfast'));
+test('水煮蛋只能安排在早餐', JSON.stringify(getMealSuitable(dish('水煮蛋', ['鸡蛋'], 'egg'))) === JSON.stringify(['breakfast']));
+test('水煮蛋菜谱数据明确标记为早餐专属', recipes.find(recipe => recipe.name === '水煮蛋')?.mealSuitable?.join(',') === 'breakfast');
 
 if (failures.length) {
   console.error(`失败 ${failures.length} 项：\n${failures.map(name => `- ${name}`).join('\n')}`);

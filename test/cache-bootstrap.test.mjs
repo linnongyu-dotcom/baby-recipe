@@ -12,6 +12,7 @@ const profile = {
   settings: { allergies: ['蛋'] },
   weeklyPlan: { monday: { dinner: ['旧餐单'] } },
   mealRulesRevision: 2,
+  mealRulesStartupRevision: 2,
 };
 let stored = JSON.stringify({ state: profile, version: 42 });
 const context = {
@@ -27,7 +28,7 @@ const migrated = JSON.parse(stored);
 assert.equal(migrated.state.weeklyPlan, null);
 assert.deepEqual(migrated.state.babies, profile.babies);
 assert.deepEqual(migrated.state.settings, profile.settings);
-assert.equal(migrated.state.mealRulesStartupRevision, 1);
+assert.equal(migrated.state.mealRulesStartupRevision, 3);
 
 const once = stored;
 vm.runInNewContext(match[1], context);

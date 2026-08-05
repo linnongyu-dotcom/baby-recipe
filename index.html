@@ -35,7 +35,9 @@
     <script>
       (() => {
         const storageKey = 'baby-recipe-storage'
-        const startupRevision = 1
+        // Bump whenever a newly deployed rule must invalidate plans that may
+        // already have hydrated under the same Zustand schema version.
+        const startupRevision = 3
         try {
           const raw = localStorage.getItem(storageKey)
           if (!raw) return

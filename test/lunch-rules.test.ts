@@ -1,10 +1,11 @@
 import type { AgeGroup, DishType, Recipe, UserSettings } from '../src/types';
-import { enforceLunchRules, generateWeeklyPlan, regenerateMeal } from '../src/utils/recipeGenerator';
+import { enforceLunchRules, generateWeeklyPlan, regenerateMeal, weeklyPlanNeedsLunchRepair } from '../src/utils/recipeGenerator';
 import {
   checkMealMandatory,
   getIngredientProteinCategories,
   getRepeatedProteinCategories,
   getVegetableIngredients,
+  isIndependentLunchMeatDish,
   isIndependentProteinDish,
 } from '../src/utils/mealValidator';
 
@@ -31,6 +32,7 @@ const fish = dish('清蒸鲈鱼', ['鲈鱼'], 'meat');
 const egg = dish('番茄炒蛋', ['番茄', '鸡蛋'], 'egg');
 const boiledEgg = dish('水煮蛋', ['鸡蛋'], 'egg');
 const eggSoup = dish('番茄蛋花汤', ['番茄', '鸡蛋'], 'soup');
+const fishBallSoup = dish('鱼丸汤', ['鱼丸'], 'soup');
 const vegetable = dish('清炒西兰花', ['西兰花'], 'vegetable');
 const pools: Record<DishType, Recipe[]> = {
   staple: [rice, beefRice],
@@ -88,6 +90,49 @@ const repairedBoiledEggLunch = enforceLunchRules(
 test('午餐水煮蛋会被红肉菜替换', repairedBoiledEggLunch.dishes.some(item =>
   isIndependentProteinDish(item) && getIngredientProteinCategories(item).includes('red_meat')
 ));
+
+const vegetableNoodles = dish('蔬菜面条', ['面条', '小白菜'], 'staple');
+const repairedNoodleLunch = enforceLunchRules(
+  { dishes: [vegetableNoodles, fishBallSoup, beef] },
+  { ...pools, soup: [fishBallSoup] },
+  '2-3y',
+  new Set(),
+  [],
+);
+test('带汤的蔬菜面条不再搭配鱼丸汤', !repairedNoodleLunch.dishes.some(item => item.id === fishBallSoup.id));
+
+const redBeanRice = dish('红豆饭', ['大米', '红豆'], 'staple');
+const eggPancake = dish('鸡蛋饼', ['面粉', '鸡蛋'], 'staple');
+const repairedRedBeanLunch = enforceLunchRules(
+  { dishes: [redBeanRice, eggPancake, vegetable] },
+  pools,
+  '2-3y',
+  new Set(),
+  [],
+);
+test('红豆饭午餐不再搭配鸡蛋饼', repairedRedBeanLunch.dishes.some(item => item.id === redBeanRice.id)
+  && !repairedRedBeanLunch.dishes.some(item => item.id === eggPancake.id));
+test('鸡蛋饼不能代替午餐肉菜', repairedRedBeanLunch.dishes.some(item =>
+  isIndependentLunchMeatDish(item)
+));
+
+const cornRice = dish('玉米饭', ['大米', '玉米'], 'staple');
+const seaweedShrimpSoup = dish('紫菜虾皮汤', ['紫菜', '虾皮'], 'soup');
+const tofuPudding = dish('豆腐脑', ['豆腐'], 'egg');
+const repairedMeatlessLunch = enforceLunchRules(
+  { dishes: [cornRice, seaweedShrimpSoup, tofuPudding] },
+  { ...pools, soup: [seaweedShrimpSoup], egg: [tofuPudding] },
+  '2-3y',
+  new Set(),
+  [],
+);
+test('玉米饭、紫菜虾皮汤和豆腐脑不能组成无肉午餐', repairedMeatlessLunch.dishes.some(item =>
+  getIngredientProteinCategories(item).includes('red_meat')
+));
+
+const stalePlan = generateWeeklyPlan({ babyAge: '2-3y', allergies: [], dislikes: [], likes: [] });
+stalePlan.monday.lunch = { dishes: [rice, eggSoup, vegetable] };
+test('运行时能识别已缓存的无肉午餐并要求重建', weeklyPlanNeedsLunchRepair(stalePlan, '2-3y'));
 
 for (const age of ['1-2y', '2-3y', '3-5y'] as AgeGroup[]) {
   const settings: UserSettings = { babyAge: age, allergies: [], dislikes: [], likes: [] };
