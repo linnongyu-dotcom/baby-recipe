@@ -248,7 +248,7 @@ export function RecipePage() {
   const [showWeeklyPlan, setShowWeeklyPlan] = useState(false);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
   const [expandedWeekDays, setExpandedWeekDays] = useState<Set<DayOfWeek>>(new Set());
-  const lunchRepairAttempted = useRef(false);
+  const lunchRepairState = useRef<{ signature: string; attempts: number }>({ signature: '', attempts: 0 });
 
   // 从宝宝档案计算年龄
   const currentBaby = babies.find(b => b.id === currentBabyId);
@@ -359,11 +359,25 @@ export function RecipePage() {
       ? weeklyPlanNeedsLunchRepair(weeklyPlan, effectiveAgeGroup)
       : false;
 
-    if (!lunchNeedsRepair) lunchRepairAttempted.current = false;
-    if (lunchNeedsRepair && lunchRepairAttempted.current) return;
+    if (!lunchNeedsRepair) lunchRepairState.current = { signature: '', attempts: 0 };
+    // Retry per unique invalid lunch signature; a single boolean can get stuck
+    // after hydration/custom edits and leave the meatless lunch visible.
+    const lunchRepairSignature = weeklyPlan
+      ? Object.values(weeklyPlan).map(day => day.lunch.dishes.map(dish => dish.id).join(',')).join('|')
+      : '';
+    const canRepairLunch = !lunchNeedsRepair
+      || lunchRepairState.current.signature !== lunchRepairSignature
+      || lunchRepairState.current.attempts < 3;
 
-    if (!weeklyPlan || ageMismatch || lunchNeedsRepair) {
-      if (lunchNeedsRepair) lunchRepairAttempted.current = true;
+    if (!weeklyPlan || ageMismatch || (lunchNeedsRepair && canRepairLunch)) {
+      if (lunchNeedsRepair) {
+        lunchRepairState.current = {
+          signature: lunchRepairSignature,
+          attempts: lunchRepairState.current.signature === lunchRepairSignature
+            ? lunchRepairState.current.attempts + 1
+            : 1,
+        };
+      }
       generatePlan();
     }
   }, [babies.length, effectiveAgeGroup, generatePlan, isInfantFeeding, isShareMode, settings.babyAge, weeklyPlan]);
