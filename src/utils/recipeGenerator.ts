@@ -28,6 +28,7 @@ import {
   getRepeatedVegetableIngredients,
   getVegetableIngredients,
   isIndependentProteinDish,
+  isIndependentLunchMeatDish,
   getIngredientProteinCategories,
   validateMealForContext,
 } from './mealValidator';
@@ -238,6 +239,18 @@ export function generateWeeklyPlan(settings: UserSettings, customRecipes: Recipe
   }
 
   return plan;
+}
+
+/**
+ * Detect persisted or manually edited plans that predate/bypass the current
+ * lunch rules. The page uses this as a runtime safety net after Zustand has
+ * hydrated, so a stale meatless lunch can never remain on screen.
+ */
+export function weeklyPlanNeedsLunchRepair(plan: WeeklyPlan, age: AgeGroup): boolean {
+  if (!isAge12Plus(age)) return false;
+  return DAYS_OF_WEEK.some(day =>
+    !validateMealForContext(plan[day].lunch.dishes, age, 'lunch', plan[day]).valid
+  );
 }
 
 function trimWeeklyDishCount(plan: WeeklyPlan, babyAge: AgeGroup | null): void {
@@ -1488,6 +1501,11 @@ function containsBeef(recipe: Recipe): boolean {
   return recipe.mainIngredients.some(ingredient => ingredient.includes('牛'));
 }
 
+/** 午餐的必选蛋白质必须是独立的肉/禽/鱼/虾菜，蛋和豆制品不能代替。 */
+function isLunchMeatDish(recipe: Recipe): boolean {
+  return isIndependentLunchMeatDish(recipe);
+}
+
 /**
  * 从合规的独立蛋白菜中选午餐蛋白质。
  * 未使用红肉优先；该小池耗尽后回到完整合规池，而不是返回空结果。
@@ -1499,7 +1517,7 @@ function pickLunchProtein(
   avoidBeef: boolean,
 ): Recipe | null {
   let compliant = candidates.filter(recipe =>
-    isIndependentProteinDish(recipe)
+    isLunchMeatDish(recipe)
     && getMealSuitable(recipe).includes('lunch')
     && !hasStapleIngredients(recipe)
     && getRepeatedProteinCategories([...companions, recipe]).length === 0
@@ -1546,14 +1564,14 @@ export function enforceLunchRules(
   }
 
   const base = staple ? [staple] : [];
-  const lunchProteinCandidates = [...availableRecipes.meat, ...availableRecipes.egg].filter(dish =>
-    suitable(dish) && isIndependentProteinDish(dish) && !hasStapleIngredients(dish)
+  const lunchProteinCandidates = availableRecipes.meat.filter(dish =>
+    suitable(dish) && isLunchMeatDish(dish) && !hasStapleIngredients(dish)
   );
   const hasRedCandidate = lunchProteinCandidates.some(dish =>
     getProteinType(dish) === 'red_meat' && (!avoidBeef || !containsBeef(dish))
   );
   let protein = original.find(dish =>
-    isIndependentProteinDish(dish)
+    isLunchMeatDish(dish)
     && (!avoidBeef || !containsBeef(dish))
     && (!hasRedCandidate || getProteinType(dish) === 'red_meat')
     && getRepeatedProteinCategories([...base, dish]).length === 0

@@ -39,7 +39,7 @@ const persisted = {
   favoriteIds: ['favorite-1'], customRecipes: [{ id: 'custom-1' }], otherSetting: true,
 };
 const migrated = migrateMealRuleCache(persisted)!;
-test('persist 版本提升到 42 以清除 v41 的旧规则餐单', PERSIST_VERSION === 42);
+test('persist 版本提升到 43 以清除旧规则餐单', PERSIST_VERSION === 43);
 test('旧餐单迁移后清空', migrated.weeklyPlan === null);
 test('迁移保留年龄过敏忌口喜好', migrated.settings === persisted.settings);
 test('迁移保留宝宝档案', migrated.babies === persisted.babies);
@@ -47,7 +47,7 @@ test('迁移保留收藏和自定义食谱', migrated.favoriteIds === persisted.
 test('迁移保留其他设置', migrated.otherSetting === true);
 test('null 餐单迁移正常', migrateMealRuleCache({ ...persisted, weeklyPlan: null })!.weeklyPlan === null);
 // persist middleware只会在旧版本调用 migrate；当前版本不会重复调用该函数。
-test('当前版本餐单可保留（迁移调用边界）', PERSIST_VERSION === 42 && oldPlan !== null);
+test('当前版本餐单可保留（迁移调用边界）', PERSIST_VERSION === 43 && oldPlan !== null);
 
 if (failures.length) {
   console.error(`失败 ${failures.length} 项：\n${failures.map(name => `- ${name}`).join('\n')}`);
