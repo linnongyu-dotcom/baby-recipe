@@ -388,7 +388,7 @@ export const useStore = create<AppState>()(
       name: 'baby-recipe-storage',
       version: PERSIST_VERSION,
       migrate: (persistedState: any, version: number) => {
-        // v43: 独立肉菜成为 12 月龄以上午餐硬性规则。清掉旧版本
+        // v43: 独立肉菜成为 12 月龄以上午餐硬性规则。清掉 v42 及更早
         // 的已缓存周餐单，避免界面继续展示“米饭 + 蛋汤 + 素菜”等无肉午餐。
         if (version >= 40 && version < PERSIST_VERSION) return migrateMealRuleCache(persistedState);
         if (version < 30) {
