@@ -65,9 +65,9 @@ const defaultSettings: UserSettings = {
   likes: [],
 };
 
-export const PERSIST_VERSION = 44;
+export const PERSIST_VERSION = 45;
 
-/** v44 规则缓存迁移：仅使旧餐单失效，完整保留用户档案与偏好数据。 */
+/** v45 规则缓存迁移：仅使旧餐单失效，完整保留用户档案与偏好数据。 */
 export function migrateMealRuleCache<T extends Record<string, any> | null | undefined>(state: T): T {
   if (!state) return state;
   return { ...state, weeklyPlan: null } as T;
@@ -388,7 +388,7 @@ export const useStore = create<AppState>()(
       name: 'baby-recipe-storage',
       version: PERSIST_VERSION,
       migrate: (persistedState: any, version: number) => {
-        // v44: 独立肉菜成为 12 月龄以上午餐硬性规则。清掉 v43 及更早
+        // v45: 独立肉菜成为 12 月龄以上午餐硬性规则。清掉旧版本
         // 的已缓存周餐单，避免界面继续展示“米饭 + 蛋汤 + 素菜”等无肉午餐。
         if (version >= 40 && version < PERSIST_VERSION) return migrateMealRuleCache(persistedState);
         if (version < 30) {
