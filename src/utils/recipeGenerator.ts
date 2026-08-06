@@ -32,6 +32,7 @@ import {
   validateMealForContext,
 } from './mealValidator';
 import { validateDayPlan } from './dayPlanValidator';
+import { getRecipeCookingForm, getRecipeFamily } from './recipeFamily';
 
 // ============================================================
 // 主入口：生成一周食谱
@@ -1581,9 +1582,18 @@ function pickLunchProtein(
     if (type === 'red_meat') return 4;
     return 3;
   };
+  const usedFamilies = new Set(priorLunchProteins.map(getRecipeFamily));
+  const previousFamily = previous && getRecipeFamily(previous);
+  const previousForm = previous && getRecipeCookingForm(previous);
+  const sameFormTwice = priorLunchProteins.length >= 2
+    && getRecipeCookingForm(priorLunchProteins.at(-2)!) === previousForm;
   const score = (recipe: Recipe): number => categoryRank(recipe) * 100
-    + (usedIds.has(recipe.id) ? 20 : 0)
+    + (usedFamilies.has(getRecipeFamily(recipe)) ? 140 : 0)
+    + (usedIds.has(recipe.id) ? 35 : 0)
     + (sameTypeTwice && getLunchProteinGroup(recipe) === previousType ? 10 : 0)
+    + (getRecipeCookingForm(recipe) === previousForm ? 20 : 0)
+    + (sameFormTwice && getRecipeCookingForm(recipe) === previousForm ? 80 : 0)
+    + (getRecipeFamily(recipe) === previousFamily ? 150 : 0)
     + (recipe.id === previous?.id ? 1000 : 0);
   const bestScore = Math.min(...compliant.map(score));
   return pickWeightedRecipe(compliant.filter(recipe => score(recipe) === bestScore));
@@ -1832,6 +1842,7 @@ export function regenerateMeal(
   usedRecipes: Recipe[],
   mealType: MealType,
   mealContext?: Partial<DayPlan>,
+  otherLunchProteins: Recipe[] = [],
 ): MealPlan {
   const age = settings.babyAge!;
   if (is6to8m(age)) {
@@ -1859,11 +1870,12 @@ export function regenerateMeal(
       break;
     case 'lunch':
       regenerated = enforceLunchRules(
-        createLunchPlan(availableRecipes, usedIds, age, dayUsedStapleNames, new Set<string>()),
+        createLunchPlan(availableRecipes, usedIds, age, dayUsedStapleNames, new Set<string>(), otherLunchProteins),
         availableRecipes,
         age,
         usedIds,
         mealContext?.breakfast?.dishes || [],
+        otherLunchProteins,
       );
       break;
     case 'dinner':

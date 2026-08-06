@@ -7,6 +7,7 @@ import {
   isIndependentLunchMeatDish,
   isIndependentProteinDish,
 } from '../src/utils/mealValidator';
+import { getRecipeCookingForm, getRecipeFamily } from '../src/utils/recipeFamily';
 
 function dish(name: string, mainIngredients: string[], dishType: DishType): Recipe {
   return {
@@ -52,6 +53,26 @@ function test(name: string, condition: boolean): void {
   if (condition) passed++;
   else failures.push(name);
 }
+
+const steamedLionHead = dish('清蒸狮子头', ['猪肉', '荸荠'], 'meat');
+const braisedLionHead = dish('红烧狮子头', ['猪肉', '荸荠'], 'meat');
+const braisedMeatball = dish('红烧肉丸', ['猪肉'], 'meat');
+test('两种狮子头属于同一家族和肉丸形态',
+  getRecipeFamily(steamedLionHead) === getRecipeFamily(braisedLionHead)
+  && getRecipeCookingForm(steamedLionHead) === 'meatball'
+  && getRecipeCookingForm(braisedLionHead) === 'meatball');
+test('红烧肉丸与狮子头家族不同但形态相同',
+  getRecipeFamily(braisedMeatball) !== getRecipeFamily(steamedLionHead)
+  && getRecipeCookingForm(braisedMeatball) === 'meatball');
+test('番茄牛腩两种名称属于同一家族',
+  getRecipeFamily(dish('番茄牛腩', ['牛肉', '番茄'], 'meat'))
+  === getRecipeFamily(dish('番茄牛腩煲', ['牛肉', '番茄'], 'meat')));
+test('三种独立排骨菜属于同一家族但排骨汤不会被关键词归类',
+  ['糖醋排骨', '红烧排骨', '蒜香排骨'].map(name => getRecipeFamily(dish(name, ['排骨'], 'meat'))).every(family => family === 'pork_ribs')
+  && getRecipeFamily(dish('排骨汤', ['排骨'], 'soup')) !== 'pork_ribs');
+test('未配置食谱稳定回退到 ID，不会因肉丝关键词误合并',
+  getRecipeFamily(dish('自定义肉丝甲', ['猪肉'], 'meat')) === '自定义肉丝甲'
+  && getRecipeFamily(dish('自定义肉丝乙', ['猪肉'], 'meat')) === '自定义肉丝乙');
 
 const repaired = enforceLunchRules(
   { dishes: [beefRice, eggSoup, vegetable] },
@@ -203,6 +224,14 @@ for (const age of ['1-2y', '2-3y', '3-5y'] as AgeGroup[]) {
       test(`${age} 周计划午餐有独立蛋白菜`, day.lunch.dishes.some(isIndependentProteinDish));
     }
     const proteins = Object.values(plan).flatMap(day => day.lunch.dishes.filter(isIndependentLunchMeatDish));
+    const explicitFamilies = proteins.map(getRecipeFamily).filter(family =>
+      ['lion_head', 'pork_ribs', 'tomato_beef_brisket'].includes(family));
+    test(`${age} 候选充足时明确午餐家族周内不重复`,
+      new Set(explicitFamilies).size === explicitFamilies.length);
+    const forms = proteins.map(getRecipeCookingForm);
+    test(`${age} 午餐烹饪形态不连续三天`,
+      !forms.some((form, index) => index >= 2 && form !== 'other'
+        && form === forms[index - 1] && form === forms[index - 2]));
     const generatedRedCount = proteins.filter(item => getIngredientProteinCategories(item).includes('red_meat')).length;
     test(`${age} 候选充足时周红肉保持2至3次`, generatedRedCount >= 2 && generatedRedCount <= 3);
     const context = plan.monday;
