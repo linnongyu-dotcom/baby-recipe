@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware';
 import { UserSettings, WeeklyPlan, Recipe, DayOfWeek, MealType, MealPlan, FoodRecord, BabyProfile, AgeGroup } from '../types';
 import { generateWeeklyPlan, regenerateMeal, replaceDishInMeal, swapMeals } from '../utils/recipeGenerator';
 import { calcAge, generateBabyId, estimateBirthDateFromAgeGroup } from '../utils/babyProfile';
+import { isIndependentLunchMeatDish } from '../utils/mealValidator';
 
 interface AppState {
   // 用户设置
@@ -140,10 +141,15 @@ export const useStore = create<AppState>()(
         if (!state.weeklyPlan || !effectiveAge) return;
 
         const usedRecipes: Recipe[] = [];
+        const otherLunchProteins: Recipe[] = [];
         for (const d of Object.keys(state.weeklyPlan) as DayOfWeek[]) {
           usedRecipes.push(...state.weeklyPlan[d].breakfast.dishes);
           usedRecipes.push(...state.weeklyPlan[d].lunch.dishes);
           usedRecipes.push(...state.weeklyPlan[d].dinner.dishes);
+          if (d !== day) {
+            const lunchProtein = state.weeklyPlan[d].lunch.dishes.find(isIndependentLunchMeatDish);
+            if (lunchProtein) otherLunchProteins.push(lunchProtein);
+          }
         }
 
         const newMeal = regenerateMeal(
@@ -152,6 +158,7 @@ export const useStore = create<AppState>()(
           usedRecipes,
           mealType,
           state.weeklyPlan[day],
+          otherLunchProteins,
         );
 
         set((s) => ({

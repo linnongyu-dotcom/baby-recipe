@@ -106,6 +106,11 @@ export type ProteinSource = 'pork' | 'beef' | 'chicken' | 'fish' | 'shrimp' | 'e
 // 食物形态
 export type TextureLevel = 'puree' | 'paste' | 'chunky' | 'family';
 
+/** 午餐独立肉菜的视觉/入口形态；与“几乎是同一道菜”的家族概念分开。 */
+export type CookingForm =
+  | 'meatball' | 'ribs' | 'shredded' | 'sliced' | 'diced' | 'minced'
+  | 'whole_piece' | 'steamed_fish' | 'braised' | 'other';
+
 // 营养标签类型
 // 营养特点标签（每个食谱至少有一个）
 // 制作特点标签（辅助标签，不作为唯一标签）
@@ -189,6 +194,10 @@ export interface Recipe {
   nutrition: string;
   mainIngredients: string[]; // 主要食材，用于过敏检测
   proteinSource?: ProteinSource; // 主要蛋白质来源，用于推荐去重
+  /** 显式菜品家族；未配置时由公共识别函数安全回退到食谱 ID。 */
+  mealFamily?: string;
+  /** 午餐独立肉菜的烹饪/视觉形态。 */
+  cookingForm?: CookingForm;
   textureLevel?: TextureLevel; // 食物形态，用于月龄适配
   /** 在一餐结构中的角色（主食/蛋白质/蔬菜/水果），用于推荐过滤 */
   mealRole?: MealDishRole;
