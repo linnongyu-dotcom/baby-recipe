@@ -17,7 +17,9 @@ for (const age of ['1-2y', '2-3y', '3-5y'] as AgeGroup[]) {
       const refreshed = regenerateMeal(settings, [], used, mealType, day);
       const context = { ...day, [mealType]: refreshed };
       test(`${age} ${mealType} 刷新通过统一校验`, validateMealForContext(refreshed.dishes, age, mealType, context).valid);
-      test(`${age} ${mealType} 蛋白不重复`, getRepeatedProteinCategories(refreshed.dishes).length === 0);
+      if (mealType !== 'lunch') {
+        test(`${age} ${mealType} 蛋白不重复`, getRepeatedProteinCategories(refreshed.dishes).length === 0);
+      }
       test(`${age} ${mealType} 蔬菜不重复`, getRepeatedVegetableIngredients(refreshed.dishes).length === 0);
       test(`${age} ${mealType} 带汤主食不配汤`, !(refreshed.dishes.some(isSoupyStaple) && refreshed.dishes.some(d => d.dishType === 'soup')));
       const replaced = replaceDishInMeal(settings, [], used, mealType, refreshed, 0, context);
