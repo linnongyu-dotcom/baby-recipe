@@ -28,7 +28,7 @@ const migrated = JSON.parse(stored);
 assert.equal(migrated.state.weeklyPlan, null);
 assert.deepEqual(migrated.state.babies, profile.babies);
 assert.deepEqual(migrated.state.settings, profile.settings);
-assert.equal(migrated.state.mealRulesStartupRevision, 2);
+assert.equal(migrated.state.mealRulesStartupRevision, 3);
 
 const once = stored;
 vm.runInNewContext(match[1], context);

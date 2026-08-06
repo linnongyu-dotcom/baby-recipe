@@ -1,5 +1,5 @@
 import type { AgeGroup, DishType, Recipe, UserSettings } from '../src/types';
-import { enforceLunchRules, generateWeeklyPlan, regenerateMeal } from '../src/utils/recipeGenerator';
+import { enforceLunchRules, generateWeeklyPlan, regenerateMeal, weeklyPlanNeedsLunchRepair } from '../src/utils/recipeGenerator';
 import {
   checkMealMandatory,
   getIngredientProteinCategories,
@@ -214,6 +214,24 @@ const proteinSoupLunch = enforceLunchRules(
 test('已有独立肉菜时蛋花汤可进入且不能替代肉菜',
   proteinSoupLunch.dishes.some(item => item.id === eggSoup.id)
   && proteinSoupLunch.dishes.some(isIndependentLunchMeatDish));
+
+const staleLunchWeek = Object.fromEntries(
+  ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map(day => [day, {
+    breakfast: { dishes: [rice, boiledEgg] },
+    lunch: { dishes: [rice, pork, vegetable] },
+    dinner: { dishes: [rice, fish, vegetable] },
+  }]),
+) as ReturnType<typeof generateWeeklyPlan>;
+test('旧缓存午餐没有汤时会触发整周重建', weeklyPlanNeedsLunchRepair(staleLunchWeek, '2-3y'));
+
+const dryNoodleWeek = structuredClone(staleLunchWeek);
+for (const day of Object.values(dryNoodleWeek)) {
+  day.lunch.dishes[0] = { ...dish('白面条', ['面条'], 'staple'), steps: ['煮熟后捞出沥干'] };
+}
+test('旧缓存中的干面条不能冒充汤品', weeklyPlanNeedsLunchRepair(dryNoodleWeek, '2-3y'));
+
+for (const day of Object.values(staleLunchWeek)) day.lunch.dishes.push(clearSoup);
+test('旧缓存整周重复同一道肉菜时会触发整周重建', weeklyPlanNeedsLunchRepair(staleLunchWeek, '2-3y'));
 
 for (const age of ['1-2y', '2-3y', '3-5y'] as AgeGroup[]) {
   const settings: UserSettings = { babyAge: age, allergies: [], dislikes: [], likes: [] };

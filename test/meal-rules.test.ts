@@ -46,6 +46,8 @@ test('规则修订只清餐单并保留档案设置', invalidated.state.weeklyPl
 test('相同规则修订不会重复迁移', !invalidateStaleMealPlan(storage));
 test('馄饨和汤面是带汤主食', ['鲜肉馄饨', '番茄汤面'].every(name => isSoupyStaple(dish(name, ['面条'], 'staple'))));
 test('干拌面和炒面不是带汤主食', ['葱油拌面', '鸡蛋炒面'].every(name => !isSoupyStaple(dish(name, ['面条'], 'staple'))));
+const drainedNoodles = { ...dish('白面条', ['面条'], 'staple'), steps: ['面条煮熟后捞出沥干'] };
+test('名称普通但制作时捞出的面条不是带汤主食', !isSoupyStaple(drainedNoodles));
 
 const tomatoEggSoup = dish('西红柿鸡蛋汤', ['西红柿', '鸡蛋'], 'soup');
 test('番茄鸡蛋汤不是独立蛋白质', !checkMealMandatory([rice, tomatoEggSoup, vegetableA, vegetableB], '2-3y', 'lunch').proteinOk);

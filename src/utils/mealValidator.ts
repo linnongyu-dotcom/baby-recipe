@@ -176,14 +176,18 @@ export function isSoupyStaple(recipe: Recipe): boolean {
   if (recipe.dishType !== 'staple') return false;
 
   const name = recipe.name;
-  if (name.includes('粥') || name.includes('馄饨') || name.includes('疙瘩汤')) return true;
+  if (name.includes('粥') || name.includes('馄饨') || name.includes('汤面') || name.includes('疙瘩汤')) return true;
 
   const dryNoodles = ['拌面', '炒面', '凉面', '炸酱面', '炸酱', '肉酱面', '肉酱'];
   if (dryNoodles.some(keyword => name.includes(keyword))) return false;
 
-  // 菜单中的面条默认是带汤的宝宝面；只有名称明确表示干拌/炒制时
-  // 才当作干主食。这样“蔬菜面条”不会再被搭配鱼丸汤等独立汤品。
-  return name.includes('面');
+  if (!name.includes('面')) return false;
+
+  // “面条”这个名称本身不能证明成品带汤。数据中不少面条会捞出、沥干、
+  // 翻炒或拌匀；把它们一律视为汤面会让午餐错误地跳过独立汤品。
+  const instructions = recipe.steps.join('');
+  const drainedOrDry = ['捞出', '沥干', '拌匀', '翻炒'].some(keyword => instructions.includes(keyword));
+  return !drainedOrDry;
 }
 
 /** 只返回 mainIngredients 中经食材字典确认的蔬菜。 */
