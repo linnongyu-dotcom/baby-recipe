@@ -33,6 +33,12 @@ const distPath = path.resolve(__dirname, '..', 'dist');
   console.log('正在上传...');
   const files = await hosting.upload({ localPath: distPath, cloudPath: '/' });
 
+  console.log('配置 SPA 路由回退...');
+  await hosting.setWebsiteDocument({
+    indexDocument: 'index.html',
+    errorDocument: 'index.html',
+  });
+
   console.log(`部署完成！${files.length} 个文件`);
   console.log(`访问: https://${envId}.tcloudbaseapp.com`);
 })().catch(err => {
