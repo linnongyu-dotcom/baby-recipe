@@ -39,7 +39,7 @@ for (const age of ageGroups) {
   for (let iter = 0; iter < ITERATIONS; iter++) {
     const issues: string[] = [];
     settings.babyAge = age;
-    const plan = generateWeeklyPlan(settings);
+    const plan = generateWeeklyPlan(settings, { seed: iter + 2 });
 
     // 测试每天（取前两天作为样本）
     const sampleDays: DayOfWeek[] = ['monday', 'tuesday', 'wednesday'];
@@ -242,7 +242,7 @@ console.log('抽样展示：1-2y 某一天的三餐计划');
 console.log('='.repeat(60));
 
 settings.babyAge = '1-2y';
-const samplePlan = generateWeeklyPlan(settings);
+const samplePlan = generateWeeklyPlan(settings, { seed: 'daily-meal-plan-sample' });
 const monday = samplePlan.monday;
 
 function printMeal(mealType: MealType, dishes: { name: string; dishType: string }[]) {

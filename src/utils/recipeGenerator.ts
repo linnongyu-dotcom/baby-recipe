@@ -1107,6 +1107,12 @@ export function enforceVegetableDiversityRules(
   const order: MealType[] = ['dinner', 'lunch', 'breakfast'];
   let attempts = 0;
 
+  const vegetablesOutsideSlot = (mealType: MealType, index: number): Set<string> => new Set(
+    order.flatMap(type => dayPlan[type].dishes
+      .filter((_, dishIndex) => type !== mealType || dishIndex !== index)
+      .flatMap(getVegetableIngredients)),
+  );
+
   const replaceSide = (mealType: MealType, index: number, forbidden: Set<string>, wanted?: FoodCategory): boolean => {
     if (attempts++ >= VEGETABLE_FIX_MAX_ATTEMPTS) return false;
     const dishes = dayPlan[mealType].dishes;
@@ -1116,6 +1122,7 @@ export function enforceVegetableDiversityRules(
     const candidates = availableRecipes.vegetable.filter(candidate => {
       const vegetables = getVegetableIngredients(candidate);
       return isReplaceableVegetable(candidate)
+        && candidate.id !== old.id
         && getMealSuitable(candidate).includes(mealType)
         && !otherIds.has(candidate.id)
         && vegetables.every(vegetable => !forbidden.has(vegetable))
@@ -1178,8 +1185,7 @@ export function enforceVegetableDiversityRules(
       if (overlap.size) {
         const index = dishes.findIndex(dish => isReplaceableVegetable(dish)
           && getVegetableIngredients(dish).some(v => overlap.has(v)));
-        const allOther = new Set(order.flatMap(type => dayPlan[type].dishes)
-          .filter(dish => dish !== dishes[index]).flatMap(getVegetableIngredients));
+        const allOther = vegetablesOutsideSlot(mealType, index);
         if (index >= 0) {
           replaceSide(mealType, index, allOther);
         } else {
@@ -1191,8 +1197,7 @@ export function enforceVegetableDiversityRules(
             const earlierIndex = earlier.findIndex(dish => isReplaceableVegetable(dish)
               && getVegetableIngredients(dish).some(v => overlap.has(v)));
             if (earlierIndex < 0) continue;
-            const forbidden = new Set(order.flatMap(type => dayPlan[type].dishes)
-              .filter(dish => dish !== earlier[earlierIndex]).flatMap(getVegetableIngredients));
+            const forbidden = vegetablesOutsideSlot(earlierType, earlierIndex);
             if (replaceSide(earlierType, earlierIndex, forbidden)) break;
           }
         }
@@ -1211,8 +1216,7 @@ export function enforceVegetableDiversityRules(
       const dishes = dayPlan[mealType].dishes;
       const index = dishes.findIndex(isReplaceableVegetable);
       if (index < 0) continue;
-      const forbidden = new Set(order.flatMap(type => dayPlan[type].dishes)
-        .filter(dish => dish !== dishes[index]).flatMap(getVegetableIngredients));
+      const forbidden = vegetablesOutsideSlot(mealType, index);
       if (replaceSide(mealType, index, forbidden, wanted)) break;
     }
   }
