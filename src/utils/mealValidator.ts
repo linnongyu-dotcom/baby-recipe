@@ -809,7 +809,10 @@ export function validateMealForContext(
   const errors = [...common.errors];
   const repeatedProtein = getRepeatedProteinCategories(dishes);
   const repeatedVegetables = getRepeatedVegetableIngredients(dishes);
-  if (repeatedProtein.length) errors.push(`同餐真实蛋白质食材重复：${repeatedProtein.join('、')}`);
+  // 午餐主食自带的肉类不应排除同类的独立肉菜。
+  if (mealType !== 'lunch' && repeatedProtein.length) {
+    errors.push(`同餐真实蛋白质食材重复：${repeatedProtein.join('、')}`);
+  }
   if (repeatedVegetables.length) errors.push(`同餐真实蔬菜食材重复：${repeatedVegetables.join('、')}`);
   if (dishes.some(isSoupyStaple) && dishes.some(d => d.dishType === 'soup')) errors.push('带汤主食不能搭配独立汤');
 

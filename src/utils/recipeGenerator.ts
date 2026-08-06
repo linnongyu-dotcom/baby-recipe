@@ -129,7 +129,7 @@ export function generateWeeklyPlan(settings: UserSettings, customRecipes: Recipe
   }
 
   // 午餐结构的最终校验必须晚于周覆盖、通用修正、主食/汤品补充和数量修剪。
-  // 这些通用步骤都可能挤掉独立蛋白菜，或引入同类蛋白质重复。
+  // 这些通用步骤都可能挤掉独立蛋白菜，或引入食材冲突。
   if (settings.babyAge && isAge12Plus(settings.babyAge)) {
     for (const day of DAYS_OF_WEEK) {
       plan[day].lunch = enforceLunchRules(
@@ -1520,7 +1520,6 @@ function pickLunchProtein(
     isLunchMeatDish(recipe)
     && getMealSuitable(recipe).includes('lunch')
     && !hasStapleIngredients(recipe)
-    && getRepeatedProteinCategories([...companions, recipe]).length === 0
     && getRepeatedVegetableIngredients([...companions, recipe]).length === 0
   );
   if (avoidBeef && compliant.some(recipe => !containsBeef(recipe))) {
@@ -1537,7 +1536,7 @@ function pickLunchProtein(
   return pickWeightedRecipe(best);
 }
 
-/** 最终收敛午餐为：一份主食、一道独立蛋白菜、至少一道真实蔬菜，且蛋白食材不重复。 */
+/** 最终收敛午餐为：一份主食、一道独立蛋白菜、至少一道真实蔬菜。 */
 export function enforceLunchRules(
   meal: MealPlan,
   availableRecipes: Record<DishType, Recipe[]>,
@@ -1574,7 +1573,6 @@ export function enforceLunchRules(
     isLunchMeatDish(dish)
     && (!avoidBeef || !containsBeef(dish))
     && (!hasRedCandidate || getProteinType(dish) === 'red_meat')
-    && getRepeatedProteinCategories([...base, dish]).length === 0
     && getRepeatedVegetableIngredients([...base, dish]).length === 0
   );
   if (!protein) {
@@ -1591,14 +1589,12 @@ export function enforceLunchRules(
     getVegetableIngredients(dish).length > 0
     && getIngredientProteinCategories(dish).length === 0
     && !base.some(selected => selected.id === dish.id)
-    && getRepeatedProteinCategories([...base, dish]).length === 0
     && getRepeatedVegetableIngredients([...base, dish]).length === 0
   );
   if (!vegetable) {
     const vegetables = availableRecipes.vegetable.filter(dish =>
       suitable(dish)
       && getVegetableIngredients(dish).length > 0
-      && getRepeatedProteinCategories([...base, dish]).length === 0
       && getRepeatedVegetableIngredients([...base, dish]).length === 0
     );
     vegetable = pickWeightedRecipe(vegetables.filter(dish => !usedIds.has(dish.id)))
@@ -1612,10 +1608,9 @@ export function enforceLunchRules(
     if (base.length >= limit || base.some(selected => selected.id === dish.id)) continue;
     if (dish.dishType === 'staple' || isIndependentProteinDish(dish)) continue;
     if (base.some(item => item.dishType === 'staple' && isSoupyStaple(item)) && dish.dishType === 'soup') continue;
-    // Optional soup/sides must not introduce a third protein source after the
+    // Optional soup/sides must not introduce another protein source after the
     // staple and the required independent protein have been selected.
     if (inferProteinSource(dish) !== 'none') continue;
-    if (getRepeatedProteinCategories([...base, dish]).length > 0) continue;
     if (getRepeatedVegetableIngredients([...base, dish]).length > 0) continue;
     base.push(dish);
   }

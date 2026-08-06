@@ -3,7 +3,6 @@ import { enforceLunchRules, generateWeeklyPlan, regenerateMeal } from '../src/ut
 import {
   checkMealMandatory,
   getIngredientProteinCategories,
-  getRepeatedProteinCategories,
   getVegetableIngredients,
   isIndependentLunchMeatDish,
   isIndependentProteinDish,
@@ -26,6 +25,7 @@ function dish(name: string, mainIngredients: string[], dishType: DishType): Reci
 
 const rice = dish('白米饭', ['大米'], 'staple');
 const beefRice = dish('牛肉焖饭', ['大米', '牛肉'], 'staple');
+const porkRice = dish('猪肉焖饭', ['大米', '猪肉'], 'staple');
 const beef = dish('红烧牛肉', ['牛肉'], 'meat');
 const pork = dish('清炖猪肉', ['猪肉'], 'meat');
 const fish = dish('清蒸鲈鱼', ['鲈鱼'], 'meat');
@@ -35,7 +35,7 @@ const eggSoup = dish('番茄蛋花汤', ['番茄', '鸡蛋'], 'soup');
 const fishBallSoup = dish('鱼丸汤', ['鱼丸'], 'soup');
 const vegetable = dish('清炒西兰花', ['西兰花'], 'vegetable');
 const pools: Record<DishType, Recipe[]> = {
-  staple: [rice, beefRice],
+  staple: [rice, beefRice, porkRice],
   meat: [beef, pork, fish],
   vegetable: [vegetable],
   soup: [eggSoup],
@@ -60,7 +60,27 @@ const repaired = enforceLunchRules(
 test('含肉主食和汤不能替代独立蛋白菜', repaired.dishes.some(isIndependentProteinDish));
 test('最终午餐包含主食、独立蛋白菜和蔬菜', checkMealMandatory(repaired.dishes, '2-3y', 'lunch').allOk);
 test('最终午餐蔬菜来自真实主要食材', repaired.dishes.some(item => getVegetableIngredients(item).length > 0));
-test('最终午餐没有重复蛋白质食材', getRepeatedProteinCategories(repaired.dishes).length === 0);
+
+const porkWithPorkStaple = enforceLunchRules(
+  { dishes: [porkRice, pork, vegetable] },
+  pools,
+  '2-3y',
+  new Set(),
+  [],
+);
+test('主食含猪肉时保留独立猪肉菜', porkWithPorkStaple.dishes.some(item => item.id === pork.id));
+test('同类猪肉可搭配后午餐仍结构合规', checkMealMandatory(porkWithPorkStaple.dishes, '2-3y', 'lunch').allOk);
+
+const beefWithBeefStaple = enforceLunchRules(
+  { dishes: [beefRice, beef, vegetable] },
+  pools,
+  '2-3y',
+  new Set(),
+  [],
+);
+test('无早餐牛肉避让时，主食含牛肉仍保留独立牛肉菜', beefWithBeefStaple.dishes.some(item => item.id === beef.id));
+test('同类牛肉可搭配后午餐仍有主食、独立肉菜和真实蔬菜',
+  checkMealMandatory(beefWithBeefStaple.dishes, '2-3y', 'lunch').allOk);
 
 const afterBeefBreakfast = enforceLunchRules(
   { dishes: [beefRice, beef, vegetable] },
@@ -138,7 +158,6 @@ for (const age of ['1-2y', '2-3y', '3-5y'] as AgeGroup[]) {
       test(`${age} 周计划午餐结构合规`, checkMealMandatory(day.lunch.dishes, age, 'lunch').allOk);
       test(`${age} 周计划午餐有独立蛋白菜`, day.lunch.dishes.some(isIndependentProteinDish));
       test(`${age} 周计划午餐优先红肉`, day.lunch.dishes.some(item => getIngredientProteinCategories(item).includes('red_meat')));
-      test(`${age} 周计划午餐蛋白不重复`, getRepeatedProteinCategories(day.lunch.dishes).length === 0);
     }
     const context = plan.monday;
     const used = Object.values(plan).flatMap(day => [
@@ -148,7 +167,6 @@ for (const age of ['1-2y', '2-3y', '3-5y'] as AgeGroup[]) {
     ]);
     const refreshed = regenerateMeal(settings, [], used, 'lunch', context);
     test(`${age} 午餐刷新结构合规`, checkMealMandatory(refreshed.dishes, age, 'lunch').allOk);
-    test(`${age} 午餐刷新蛋白不重复`, getRepeatedProteinCategories(refreshed.dishes).length === 0);
   }
 }
 
