@@ -1,5 +1,5 @@
 import { Recipe, AgeGroup, MealType, ProteinSource, TextureLevel, AGE_TEXTURE_RULES, AGE_EGG_RULES, AGE_MEAL_STRUCTURE, NutritionTag, FoodTypeLabel, Difficulty, VegetableColor } from '../types';
-import { lookupFoodCategory, isMeatOrEggLike, isVegetableCategory, FoodCategory } from './foodDictionary';
+import { lookupFoodCategory, isMeatOrEggLike, isVegetableCategory, normalizeFoodName, FoodCategory } from './foodDictionary';
 import { isAge12Plus, is6to8m, is9to11m, isOver2 } from './ageRules';
 
 // ============================================================
@@ -171,6 +171,39 @@ export function getStapleSubCategory(name: string): string {
   return 'other_staple';
 }
 
+/** 判断主食是否自带汤水，供生成和校验共用。 */
+export function isSoupyStaple(recipe: Recipe): boolean {
+  if (recipe.dishType !== 'staple') return false;
+
+  const name = recipe.name;
+  if (name.includes('粥') || name.includes('馄饨') || name.includes('疙瘩汤')) return true;
+
+  const dryNoodles = ['拌面', '炒面', '凉面', '炸酱面', '炸酱', '肉酱面', '肉酱'];
+  if (dryNoodles.some(keyword => name.includes(keyword))) return false;
+
+  // 菜单中的面条默认是带汤的宝宝面；只有名称明确表示干拌/炒制时
+  // 才当作干主食。这样“蔬菜面条”不会再被搭配鱼丸汤等独立汤品。
+  return name.includes('面');
+}
+
+/** 只返回 mainIngredients 中经食材字典确认的蔬菜。 */
+export function getVegetableIngredients(recipe: Recipe): string[] {
+  return [...new Set(recipe.mainIngredients
+    .filter(ingredient => isVegetableCategory(lookupFoodCategory(ingredient)))
+    .map(normalizeFoodName))];
+}
+
+/** 返回同餐在不同菜品中重复出现的蔬菜。 */
+export function getRepeatedVegetableIngredients(dishes: Recipe[]): string[] {
+  const counts = new Map<string, number>();
+  for (const dish of dishes) {
+    for (const vegetable of new Set(getVegetableIngredients(dish))) {
+      counts.set(vegetable, (counts.get(vegetable) || 0) + 1);
+    }
+  }
+  return [...counts.entries()].filter(([, count]) => count > 1).map(([name]) => name);
+}
+
 /** 检测同餐中是否存在重复主食 */
 export function hasDuplicateStaple(dishes: Recipe[]): { conflict: boolean; stapleNames: string[] } {
   const stapleDishes = dishes.filter(d => d.dishType === 'staple');
@@ -268,7 +301,11 @@ export function validateMeal(
 
   // 检查4：蛋白质堆叠（1岁以上适用）
   if (isAge12Plus(age)) {
-    const proteinCheck = hasExcessiveProtein(dishes);
+    // 午餐汤里的蛋花、虾皮、鱼丸或少量肉末只是配汤，不作为第二道
+    // 独立蛋白菜参与“蛋白质堆叠”硬校验。
+    const proteinCheck = hasExcessiveProtein(
+      mealType === 'lunch' ? dishes.filter(dish => dish.dishType !== 'soup') : dishes
+    );
     if (proteinCheck.overloaded) {
       errors.push(`蛋白质来源过多（${proteinCheck.proteinSources.join('、')}），建议每餐选择1种主要蛋白质`);
     }
@@ -592,12 +629,11 @@ export function checkMealMandatory(dishes: Recipe[], age: AgeGroup, mealType: Me
 
   const stapleOk = dishes.some(d => d.dishType === 'staple');
 
-  const proteinOk = dishes.some(d => {
-    if (d.dishType === 'meat' || d.dishType === 'egg') return true;
-    if (d.dishType === 'staple' && inferProteinSource(d) !== 'none') return true;
-    if (d.dishType === 'soup' && inferProteinSource(d) !== 'none') return true;
-    return false;
-  });
+  const proteinOk = isBreakfast
+    ? dishes.some(d => inferProteinSource(d) !== 'none')
+    : mealType === 'lunch'
+      ? dishes.some(isIndependentLunchMeatDish)
+      : dishes.some(isIndependentProteinDish);
 
   const vegetableOk = dishes.some(d => {
     // 任何 vegetable 类型的菜品即算蔬菜（包括土豆丝、烧豆腐等）
@@ -648,6 +684,48 @@ export function checkMealMandatory(dishes: Recipe[], age: AgeGroup, mealType: Me
 /** 蛋白质类型（用于推荐排序） */
 export type ProteinType = 'red_meat' | 'poultry' | 'fish' | 'shrimp' | 'egg' | 'tofu' | 'none';
 
+export function getIngredientProteinCategories(recipe: Recipe): ProteinType[] {
+  const categories = new Set<ProteinType>();
+  for (const ingredient of recipe.mainIngredients) {
+    const category = lookupFoodCategory(ingredient);
+    if (category === 'egg') categories.add('egg');
+    if (category === 'redMeat') categories.add('red_meat');
+    if (category === 'poultry') categories.add('poultry');
+    if (category === 'soyProduct') categories.add('tofu');
+    if (category === 'fishSeafood') {
+      categories.add(ingredient.includes('虾') ? 'shrimp' : 'fish');
+    }
+  }
+  return [...categories];
+}
+
+/** 根据真实主要食材返回同餐重复的蛋白质类别。 */
+export function getRepeatedProteinCategories(dishes: Recipe[]): ProteinType[] {
+  const counts = new Map<ProteinType, number>();
+  for (const dish of dishes) {
+    for (const category of getIngredientProteinCategories(dish)) {
+      counts.set(category, (counts.get(category) || 0) + 1);
+    }
+  }
+  return [...counts.entries()].filter(([, count]) => count > 1).map(([category]) => category);
+}
+
+/** 汤中的蛋花、鱼丸、虾皮或少量肉末不视为独立蛋白质菜。 */
+export function isIndependentProteinDish(recipe: Recipe): boolean {
+  if (recipe.dishType === 'soup' || recipe.dishType === 'staple' || recipe.dishType === 'dessert') {
+    return false;
+  }
+  return getIngredientProteinCategories(recipe).length > 0;
+}
+
+/** 午餐必选的独立动物性肉菜（红肉、禽肉、鱼或虾）。 */
+export function isIndependentLunchMeatDish(recipe: Recipe): boolean {
+  if (!isIndependentProteinDish(recipe)) return false;
+  return getIngredientProteinCategories(recipe).some(category =>
+    category === 'red_meat' || category === 'poultry' || category === 'fish' || category === 'shrimp'
+  );
+}
+
 /** 从食谱推导蛋白质类型 */
 export function getProteinType(recipe: Recipe): ProteinType {
   const protein = inferProteinSource(recipe);
@@ -684,14 +762,14 @@ const LUNCH_PROTEIN_PRIORITY: Record<ProteinType, number> = {
   none: 0,
 };
 
-/** 晚餐蛋白质优先级（高到低）：蛋类 > 鱼类 > 豆制品 > 禽肉 > 红肉碎末 > 大块红肉 */
+/** 晚餐蛋白质优先级（高到低）：鱼 > 虾 > 禽肉 > 豆制品 > 蛋；红肉仅作最终兜底。 */
 const DINNER_PROTEIN_PRIORITY: Record<ProteinType, number> = {
-  egg: 5,
-  fish: 4,
-  tofu: 4,
-  shrimp: 3,
-  poultry: 3,
-  red_meat: 1, // 红肉优先级最低，但允许碎末
+  fish: 6,
+  shrimp: 5,
+  poultry: 4,
+  tofu: 3,
+  egg: 2,
+  red_meat: 1,
   none: 0,
 };
 
@@ -711,6 +789,100 @@ export function sortByDinnerProtein(recipes: Recipe[]): Recipe[] {
     const pb = DINNER_PROTEIN_PRIORITY[getProteinType(b)];
     return pb - pa;
   });
+}
+
+export interface DinnerValidationResult extends MealValidationResult {
+  /** 午晚餐是否使用了相同的真实蛋白质类别。 */
+  lunchProteinOverlap: ProteinType[];
+}
+
+/**
+ * 所有会写回周餐单的入口共用的餐次硬规则校验。生成器可以通过候选标记
+ * 表达“当前过滤后的池中确有红肉/轻蛋白”，但过敏、年龄及餐次适配仍由
+ * 候选过滤器负责，校验器不会为了凑数放宽这些条件。
+ */
+export function validateMealForContext(
+  dishes: Recipe[],
+  age: AgeGroup,
+  mealType: MealType,
+  dayContext: Partial<Record<MealType, { dishes: Recipe[] }>> = {},
+  candidates: { hasRedMeat?: boolean; hasLightProtein?: boolean } = {},
+): MealValidationResult {
+  const common = validateMeal(dishes, age, mealType);
+  if (!isAge12Plus(age)) return common;
+  const errors = [...common.errors];
+  const repeatedProtein = getRepeatedProteinCategories(dishes);
+  const repeatedVegetables = getRepeatedVegetableIngredients(dishes);
+  // 午餐主食自带的肉类不应排除同类的独立肉菜。
+  if (mealType !== 'lunch' && repeatedProtein.length) {
+    errors.push(`同餐真实蛋白质食材重复：${repeatedProtein.join('、')}`);
+  }
+  if (repeatedVegetables.length) errors.push(`同餐真实蔬菜食材重复：${repeatedVegetables.join('、')}`);
+  if (dishes.some(isSoupyStaple) && dishes.some(d => d.dishType === 'soup')) errors.push('带汤主食不能搭配独立汤');
+
+  const eggCount = dishes.filter(d => getIngredientProteinCategories(d).includes('egg')).length;
+  const independent = dishes.filter(isIndependentProteinDish);
+  if (mealType === 'breakfast') {
+    if (!dishes.some(d => inferProteinSource(d) !== 'none')) errors.push('早餐缺少适宜蛋白质');
+    if (eggCount > 1) errors.push('早餐不得出现两种主要蛋制品');
+    if (dishes.some(d => !getMealSuitable(d).includes('breakfast'))) errors.push('早餐含有不适合早餐的菜品');
+  } else if (mealType === 'lunch') {
+    if (!dishes.some(isIndependentLunchMeatDish)) errors.push('午餐缺少独立肉类菜');
+    if (!dishes.some(d => getVegetableIngredients(d).length > 0)) errors.push('午餐缺少真正的蔬菜');
+    if (candidates.hasRedMeat && !independent.some(d => getIngredientProteinCategories(d).includes('red_meat'))) errors.push('有合规红肉候选时午餐应优先独立红肉');
+    if (eggCount > 1) errors.push('同一份午餐最多一道含蛋菜');
+  } else {
+    return validateDinnerRules(dishes, age, dayContext.lunch?.dishes || [], candidates.hasLightProtein !== false);
+  }
+  return { valid: errors.length === 0, errors: [...new Set(errors)], warnings: common.warnings };
+}
+
+/**
+ * 校验 12 月龄以上晚餐的最终结构。轻蛋白候选存在时，红肉不是合法兜底。
+ * 该入口只读取 mainIngredients 判断蛋白质和蛋类，避免菜名/dishType 误判。
+ */
+export function validateDinnerRules(
+  dishes: Recipe[],
+  age: AgeGroup,
+  lunchDishes: Recipe[] = [],
+  hasLightProteinCandidates = true,
+): DinnerValidationResult {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  if (!isAge12Plus(age)) return { valid: true, errors, warnings, lunchProteinOverlap: [] };
+
+  const staples = dishes.filter(dish => dish.dishType === 'staple');
+  const independent = dishes.filter(isIndependentProteinDish);
+  const light = independent.filter(dish =>
+    getIngredientProteinCategories(dish).some(type => type !== 'red_meat')
+    && !getIngredientProteinCategories(dish).includes('red_meat')
+  );
+  const hasRedMeat = dishes.some(dish => getIngredientProteinCategories(dish).includes('red_meat'));
+  const eggDishCount = dishes.filter(dish => getIngredientProteinCategories(dish).includes('egg')).length;
+  const repeated = getRepeatedProteinCategories(dishes);
+  const lunchTypes = new Set(lunchDishes.flatMap(getIngredientProteinCategories));
+  const dinnerTypes = new Set(dishes.flatMap(getIngredientProteinCategories));
+  const lunchProteinOverlap = [...dinnerTypes].filter(type => lunchTypes.has(type));
+
+  if (staples.length !== 1) errors.push(`晚餐必须有且只有一份主食（当前 ${staples.length} 份）`);
+  if (light.length === 0 && (hasLightProteinCandidates || independent.length === 0)) {
+    errors.push('晚餐缺少独立轻蛋白质菜');
+  }
+  if (!dishes.some(dish => getVegetableIngredients(dish).length > 0)) errors.push('晚餐缺少真正的蔬菜');
+  if (hasRedMeat && hasLightProteinCandidates) errors.push('存在合规轻蛋白候选时晚餐不得安排红肉');
+  if (hasRedMeat && light.length > 0) errors.push('晚餐不得堆叠轻蛋白与红肉');
+  if (independent.length > 1) errors.push('晚餐不得出现两道主要蛋白质菜');
+  if (eggDishCount > 1) errors.push('同一份晚餐最多一道含蛋菜');
+  if (repeated.length > 0) errors.push(`晚餐真实蛋白质食材重复：${repeated.join('、')}`);
+  if (dishes.some(isSoupyStaple) && dishes.some(dish => dish.dishType === 'soup')) {
+    errors.push('带汤主食不能再搭配独立汤品');
+  }
+  const limit = getMealDishLimit(age, 'dinner');
+  const count = dishes.filter(dish => dish.dishType !== 'dessert').length;
+  if (count > limit.max) errors.push(`晚餐菜品数量 ${count} 超过上限 ${limit.max}`);
+  if (lunchProteinOverlap.length > 0) warnings.push(`午晚餐蛋白质类别重复：${lunchProteinOverlap.join('、')}`);
+
+  return { valid: errors.length === 0, errors, warnings, lunchProteinOverlap };
 }
 
 /** 判断食谱是否易消化（晚餐优先） */

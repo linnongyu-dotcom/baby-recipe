@@ -1,8 +1,9 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { UserSettings, WeeklyPlan, Recipe, DayOfWeek, MealType, MealPlan, FoodRecord, BabyProfile, AgeGroup } from '../types';
-import { generateWeeklyPlan, regenerateMeal, regenerateDish, swapMeals } from '../utils/recipeGenerator';
+import { generateWeeklyPlan, regenerateMeal, replaceDishInMeal, swapMeals } from '../utils/recipeGenerator';
 import { calcAge, generateBabyId, estimateBirthDateFromAgeGroup } from '../utils/babyProfile';
+import { isIndependentLunchMeatDish } from '../utils/mealValidator';
 
 interface AppState {
   // 用户设置
@@ -64,6 +65,14 @@ const defaultSettings: UserSettings = {
   dislikes: [],
   likes: [],
 };
+
+export const PERSIST_VERSION = 43;
+
+/** v43 规则缓存迁移：仅使旧餐单失效，完整保留用户档案与偏好数据。 */
+export function migrateMealRuleCache<T extends Record<string, any> | null | undefined>(state: T): T {
+  if (!state) return state;
+  return { ...state, weeklyPlan: null } as T;
+}
 
 // 获取当前有效的 AgeGroup（优先从 baby 档案计算，回退到 settings）
 function getEffectiveBabyAge(state: { babies: BabyProfile[]; currentBabyId: string | null; settings: UserSettings }): AgeGroup | null {
@@ -132,17 +141,24 @@ export const useStore = create<AppState>()(
         if (!state.weeklyPlan || !effectiveAge) return;
 
         const usedRecipes: Recipe[] = [];
+        const otherLunchProteins: Recipe[] = [];
         for (const d of Object.keys(state.weeklyPlan) as DayOfWeek[]) {
           usedRecipes.push(...state.weeklyPlan[d].breakfast.dishes);
           usedRecipes.push(...state.weeklyPlan[d].lunch.dishes);
           usedRecipes.push(...state.weeklyPlan[d].dinner.dishes);
+          if (d !== day) {
+            const lunchProtein = state.weeklyPlan[d].lunch.dishes.find(isIndependentLunchMeatDish);
+            if (lunchProtein) otherLunchProteins.push(lunchProtein);
+          }
         }
 
         const newMeal = regenerateMeal(
           { ...state.settings, babyAge: effectiveAge },
           state.customRecipes,
           usedRecipes,
-          mealType
+          mealType,
+          state.weeklyPlan[day],
+          otherLunchProteins,
         );
 
         set((s) => ({
@@ -177,26 +193,22 @@ export const useStore = create<AppState>()(
           }
         }
 
-        const newDish = regenerateDish(
+        const newMeal = replaceDishInMeal(
           { ...state.settings, babyAge: effectiveAge },
           state.customRecipes,
           usedRecipes,
-          targetDish.dishType
+          mealType,
+          mealPlan,
+          dishIndex,
+          dayPlan,
         );
-        if (!newDish) return;
-
-        const newDishes = [...mealPlan.dishes];
-        newDishes[dishIndex] = newDish;
 
         set((s) => ({
           weeklyPlan: {
             ...s.weeklyPlan!,
             [day]: {
               ...s.weeklyPlan![day],
-              [mealType]: {
-                ...s.weeklyPlan![day][mealType],
-                dishes: newDishes,
-              },
+                [mealType]: newMeal,
             },
           },
         }));
@@ -227,7 +239,9 @@ export const useStore = create<AppState>()(
         if (!weeklyPlan) return;
 
         const dayPlan = weeklyPlan[day];
-        const swapped = swapMeals(dayPlan);
+        const effectiveAge = getEffectiveBabyAge(get());
+        if (!effectiveAge) return;
+        const swapped = swapMeals(dayPlan, effectiveAge);
 
         set((state) => ({
           weeklyPlan: {
@@ -379,8 +393,11 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'baby-recipe-storage',
-      version: 40,
+      version: PERSIST_VERSION,
       migrate: (persistedState: any, version: number) => {
+        // v43: 独立肉菜成为 12 月龄以上午餐硬性规则。清掉 v42 及更早
+        // 的已缓存周餐单，避免界面继续展示“米饭 + 蛋汤 + 素菜”等无肉午餐。
+        if (version >= 40 && version < PERSIST_VERSION) return migrateMealRuleCache(persistedState);
         if (version < 30) {
           return {
             settings: persistedState?.settings || defaultSettings,

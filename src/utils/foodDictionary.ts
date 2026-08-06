@@ -34,6 +34,16 @@ export const FOOD_CATEGORY_META: Record<FoodCategory, FoodCategoryMeta> = {
 
 const FOOD_MAP: Record<string, FoodCategory> = {};
 
+/** Core-name aliases are shared by validation and generation. */
+const FOOD_NAME_ALIASES: Record<string, string> = {
+  '西红柿': '番茄',
+};
+
+export function normalizeFoodName(ingredient: string): string {
+  const name = ingredient.trim();
+  return FOOD_NAME_ALIASES[name] || name;
+}
+
 function def(category: FoodCategory, ...names: string[]) {
   for (const name of names) {
     FOOD_MAP[name] = category;
@@ -50,7 +60,7 @@ def('egg', '鸡蛋', '蛋');
 
 def('fishSeafood',
   '三文鱼', '鳕鱼', '鲈鱼', '龙利鱼', '带鱼', '草鱼', '鲤鱼', '银鱼',
-  '鱼肉', '鱼', '虾', '虾仁', '蟹',
+  '鱼肉', '鱼丸', '鱼', '虾', '虾仁', '虾皮', '蟹',
 );
 
 def('redMeat',
@@ -89,7 +99,7 @@ def('other',
 );
 
 export function lookupFoodCategory(ingredient: string): FoodCategory {
-  return FOOD_MAP[ingredient] || 'other';
+  return FOOD_MAP[ingredient] || FOOD_MAP[normalizeFoodName(ingredient)] || 'other';
 }
 
 export function isProteinCategory(cat: FoodCategory): boolean {

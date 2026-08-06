@@ -1,6 +1,7 @@
 import { generateWeeklyPlan } from '../src/utils/recipeGenerator';
 import { UserSettings, AgeGroup, Recipe, DishType } from '../src/types';
 import { inferProteinSource } from '../src/utils/mealValidator';
+import { withSeed } from './helpers/seededRandom';
 
 const AGES: AgeGroup[] = ['6-8m', '9-11m', '1-2y', '2-3y', '3-5y'];
 
@@ -49,7 +50,7 @@ function isForbiddenFor12Plus(dish: Recipe): boolean {
   return false;
 }
 
-function testPlan(settings: UserSettings, runNum: number): TestResult {
+function testPlan(settings: UserSettings, runNum: number, seed: number): TestResult {
   const errors: string[] = [];
   const stats = {
     totalMeals: 0,
@@ -63,7 +64,7 @@ function testPlan(settings: UserSettings, runNum: number): TestResult {
     stapleRepeatSameDay: 0,
   };
 
-  const plan = generateWeeklyPlan(settings);
+  const plan = withSeed(seed, () => generateWeeklyPlan(settings));
   const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const;
   const dayNames = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
   const is12Plus = settings.babyAge === '1-2y' || settings.babyAge === '2-3y' || settings.babyAge === '3-5y';
@@ -122,7 +123,11 @@ function testPlan(settings: UserSettings, runNum: number): TestResult {
         }
 
         // 检查3：蛋白质堆叠（超过2种不同类型蛋白质）
-        const proteinSources = new Set(dishes.map(d => inferProteinSource(d)).filter(s => s !== 'none'));
+        // 汤中的蛋花、豆腐或少量肉末是辅助汤，不按第三份独立蛋白计数。
+        const proteinSources = new Set(dishes
+          .filter(d => d.dishType !== 'soup')
+          .map(d => inferProteinSource(d))
+          .filter(s => s !== 'none'));
         if (proteinSources.size > 2) {
           errors.push(`${dayName}${meal.label}：蛋白质来源过多(${[...proteinSources].join(',')})`);
         }
@@ -218,7 +223,7 @@ console.log('='.repeat(60));
 const allErrors: string[] = [];
 const runsPerAge = 5;
 
-for (const age of AGES) {
+for (const [ageIndex, age] of AGES.entries()) {
   console.log(`\n--- ${age} ---`);
   const ageErrors: string[] = [];
 
@@ -230,10 +235,11 @@ for (const age of AGES) {
       likes: [],
     };
 
-    const result = testPlan(settings, run + 1);
+    const seed = 700000 + ageIndex * 100 + run;
+    const result = testPlan(settings, run + 1, seed);
 
     if (result.errors.length > 0) {
-      ageErrors.push(...result.errors);
+      ageErrors.push(...result.errors.map(error => `seed=${seed} age=${age} round=${run + 1} ${error}`));
     }
   }
 
