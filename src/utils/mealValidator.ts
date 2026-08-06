@@ -301,7 +301,11 @@ export function validateMeal(
 
   // 检查4：蛋白质堆叠（1岁以上适用）
   if (isAge12Plus(age)) {
-    const proteinCheck = hasExcessiveProtein(dishes);
+    // 午餐汤里的蛋花、虾皮、鱼丸或少量肉末只是配汤，不作为第二道
+    // 独立蛋白菜参与“蛋白质堆叠”硬校验。
+    const proteinCheck = hasExcessiveProtein(
+      mealType === 'lunch' ? dishes.filter(dish => dish.dishType !== 'soup') : dishes
+    );
     if (proteinCheck.overloaded) {
       errors.push(`蛋白质来源过多（${proteinCheck.proteinSources.join('、')}），建议每餐选择1种主要蛋白质`);
     }
