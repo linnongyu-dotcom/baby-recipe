@@ -3454,7 +3454,7 @@ export const recipes: Recipe[] = [
     dishType: 'vegetable',
   },
   {
-    id: 'r309',
+    id: 'r345',
     name: '清炒油麦菜',
     ingredients: [{ name: '油麦菜', amount: '150g' }, { name: '蒜', amount: '2瓣' }],
     steps: ['油麦菜洗净切段', '蒜切末', '锅中放油爆香蒜末', '加入油麦菜翻炒', '调味即可'],
@@ -3466,7 +3466,7 @@ export const recipes: Recipe[] = [
     dishType: 'vegetable',
   },
   {
-    id: 'r310',
+    id: 'r346',
     name: '番茄炒西兰花',
     ingredients: [{ name: '西兰花', amount: '100g' }, { name: '番茄', amount: '1个' }],
     steps: ['西兰花掰小朵焯水', '番茄切块', '锅中放油炒番茄', '加入西兰花翻炒', '调味即可'],
@@ -3478,7 +3478,7 @@ export const recipes: Recipe[] = [
     dishType: 'vegetable',
   },
   {
-    id: 'r311',
+    id: 'r347',
     name: '蚝油生菜',
     ingredients: [{ name: '生菜', amount: '150g' }, { name: '蚝油', amount: '适量' }],
     steps: ['生菜洗净', '锅中加水煮开', '焯水捞出', '淋上蚝油', '拌匀即可'],
@@ -3778,6 +3778,71 @@ export const recipes: Recipe[] = [
     nutrition: '蘑菇汤鲜美营养',
     mainIngredients: ['蘑菇', '鸡蛋'],
     dishType: 'soup',
+  },
+  // ==================== 午餐独立动物性肉菜（12月龄以上） ====================
+  {
+    id: 'r336', name: '番茄牛肉碎',
+    ingredients: [{ name: '牛肉', amount: '60g' }, { name: '番茄', amount: '60g' }],
+    steps: ['牛肉去筋膜后剁碎', '番茄去皮切小块', '锅中加少量水将番茄煮软', '加入牛肉碎煮至完全熟透', '出锅前检查颗粒大小，保持软烂少盐'],
+    ageGroups: ['1-2y', '2-3y', '3-5y'], tags: ['补铁', '软烂', '午餐'], category: '肉类', dishType: 'meat',
+    nutrition: '牛肉提供铁和优质蛋白质，番茄丰富口感。', mainIngredients: ['牛肉', '番茄'], proteinSource: 'beef', proteinSourceType: '肉类',
+    textureLevel: 'chunky', mealRole: 'protein', mealSuitable: ['lunch'], difficulty: '简单', foodType: { carbohydrate: false, protein: true, vegetable: true }, mealFamily: 'tomato_minced_beef', cookingForm: 'minced',
+  },
+  {
+    id: 'r337', name: '西葫芦牛肉末',
+    ingredients: [{ name: '牛肉', amount: '60g' }, { name: '西葫芦', amount: '70g' }],
+    steps: ['牛肉去筋膜后剁成细末', '西葫芦去皮切适龄小丁', '加少量水煨软西葫芦', '加入牛肉末翻散并煮至完全熟透', '确认成品软烂后出锅'],
+    ageGroups: ['1-2y', '2-3y'], tags: ['补铁', '软烂', '午餐'], category: '肉类', dishType: 'meat', nutrition: '牛肉提供铁和优质蛋白质，搭配西葫芦丰富口感。',
+    mainIngredients: ['牛肉', '西葫芦'], proteinSource: 'beef', proteinSourceType: '肉类', textureLevel: 'chunky', mealRole: 'protein', mealSuitable: ['lunch'], difficulty: '简单', foodType: { carbohydrate: false, protein: true, vegetable: true }, mealFamily: 'zucchini_minced_beef', cookingForm: 'minced',
+  },
+  {
+    id: 'r338', name: '南瓜蒸肉饼',
+    ingredients: [{ name: '猪肉', amount: '60g' }, { name: '南瓜', amount: '50g' }],
+    steps: ['猪肉去筋膜后剁碎', '南瓜蒸软并压碎', '将南瓜与肉糜拌匀后压成薄肉饼', '蒸至中心完全熟透', '切成适龄小块并确认可轻易压碎'],
+    ageGroups: ['1-2y', '2-3y', '3-5y'], tags: ['蒸制', '软烂', '午餐'], category: '肉类', dishType: 'meat', nutrition: '猪肉提供优质蛋白质，南瓜使肉饼质地软嫩。',
+    mainIngredients: ['猪肉', '南瓜'], proteinSource: 'pork', proteinSourceType: '肉类', textureLevel: 'chunky', mealRole: 'protein', mealSuitable: ['lunch'], difficulty: '简单', foodType: { carbohydrate: false, protein: true, vegetable: true }, mealFamily: 'pumpkin_pork_patty', cookingForm: 'patty',
+  },
+  {
+    id: 'r339', name: '冬瓜肉末煨菜',
+    ingredients: [{ name: '猪肉', amount: '55g' }, { name: '冬瓜', amount: '80g' }],
+    steps: ['猪肉去筋膜后剁碎', '冬瓜去皮切适龄小丁', '用少量水将冬瓜煨至软烂', '加入肉末煮散并彻底煮熟', '收至少量汤汁后出锅，不作为汤品'],
+    ageGroups: ['1-2y', '2-3y'], tags: ['炖煮', '软烂', '午餐'], category: '肉类', dishType: 'meat', nutrition: '猪肉提供优质蛋白质，冬瓜使菜品清淡软烂。',
+    mainIngredients: ['猪肉', '冬瓜'], proteinSource: 'pork', proteinSourceType: '肉类', textureLevel: 'chunky', mealRole: 'protein', mealSuitable: ['lunch'], difficulty: '简单', foodType: { carbohydrate: false, protein: true, vegetable: true }, mealFamily: 'winter_melon_minced_pork', cookingForm: 'braised',
+  },
+  {
+    id: 'r340', name: '香菇蒸鸡肉',
+    ingredients: [{ name: '鸡肉', amount: '60g' }, { name: '香菇', amount: '25g' }],
+    steps: ['鸡肉去皮去筋并切碎', '香菇洗净切碎', '两种食材铺成薄层', '蒸至鸡肉中心完全熟透', '按年龄切成小丁，确认软嫩后食用'],
+    ageGroups: ['1-2y', '2-3y', '3-5y'], tags: ['蒸制', '软嫩', '午餐'], category: '肉类', dishType: 'meat', nutrition: '鸡肉提供优质蛋白质，香菇丰富口感。',
+    mainIngredients: ['鸡肉', '香菇'], proteinSource: 'chicken', proteinSourceType: '禽肉', textureLevel: 'chunky', mealRole: 'protein', mealSuitable: ['lunch'], difficulty: '简单', foodType: { carbohydrate: false, protein: true, vegetable: true }, mealFamily: 'steamed_chicken_mushroom', cookingForm: 'diced',
+  },
+  {
+    id: 'r341', name: '胡萝卜鸡肉碎',
+    ingredients: [{ name: '鸡肉', amount: '60g' }, { name: '胡萝卜', amount: '50g' }],
+    steps: ['鸡肉去皮去筋后切碎', '胡萝卜去皮切碎', '胡萝卜加少量水煮至软烂', '加入鸡肉碎煮至完全熟透', '确认颗粒可轻易压碎后出锅'],
+    ageGroups: ['1-2y', '2-3y'], tags: ['软烂', '少油', '午餐'], category: '肉类', dishType: 'meat', nutrition: '鸡肉提供优质蛋白质，搭配胡萝卜丰富口感。',
+    mainIngredients: ['鸡肉', '胡萝卜'], proteinSource: 'chicken', proteinSourceType: '禽肉', textureLevel: 'chunky', mealRole: 'protein', mealSuitable: ['lunch'], difficulty: '简单', foodType: { carbohydrate: false, protein: true, vegetable: true }, mealFamily: 'carrot_minced_chicken', cookingForm: 'minced',
+  },
+  {
+    id: 'r342', name: '南瓜鸡肉丁',
+    ingredients: [{ name: '鸡肉', amount: '60g' }, { name: '南瓜', amount: '60g' }],
+    steps: ['鸡肉去皮去筋切成适龄小丁', '南瓜去皮切小丁', '加少量水先将南瓜煮软', '加入鸡肉丁煮至完全熟透', '确认鸡肉软嫩且大小适宜后出锅'],
+    ageGroups: ['1-2y', '2-3y', '3-5y'], tags: ['炖煮', '软嫩', '午餐'], category: '肉类', dishType: 'meat', nutrition: '鸡肉提供优质蛋白质，南瓜使菜品口感柔和。',
+    mainIngredients: ['鸡肉', '南瓜'], proteinSource: 'chicken', proteinSourceType: '禽肉', textureLevel: 'chunky', mealRole: 'protein', mealSuitable: ['lunch'], difficulty: '简单', foodType: { carbohydrate: false, protein: true, vegetable: true }, mealFamily: 'pumpkin_diced_chicken', cookingForm: 'diced',
+  },
+  {
+    id: 'r343', name: '丝瓜鸡肉末',
+    ingredients: [{ name: '鸡肉', amount: '60g' }, { name: '丝瓜', amount: '50g' }],
+    steps: ['鸡肉去皮去筋后剁成细末', '丝瓜焯水后切碎', '加少量水煮软丝瓜', '加入鸡肉末煮散并彻底熟透', '保持清淡，确认颗粒适龄后出锅'],
+    ageGroups: ['1-2y', '2-3y'], tags: ['软烂', '少油', '午餐'], category: '肉类', dishType: 'meat', nutrition: '鸡肉提供优质蛋白质，搭配丝瓜丰富口感。',
+    mainIngredients: ['鸡肉', '丝瓜'], proteinSource: 'chicken', proteinSourceType: '禽肉', textureLevel: 'chunky', mealRole: 'protein', mealSuitable: ['lunch'], difficulty: '简单', foodType: { carbohydrate: false, protein: true, vegetable: true }, mealFamily: 'loofah_minced_chicken', cookingForm: 'minced',
+  },
+  {
+    id: 'r344', name: '番茄鳕鱼块',
+    ingredients: [{ name: '鳕鱼', amount: '65g' }, { name: '番茄', amount: '55g' }],
+    steps: ['鳕鱼去皮去刺并仔细检查残留鱼刺', '番茄去皮切小块后加少量水煮软', '放入鳕鱼蒸煮至完全熟透', '再次检查鱼刺', '1-2岁压成软嫩鱼碎，较大儿童切成适龄小块'],
+    ageGroups: ['1-2y', '2-3y', '3-5y'], tags: ['软嫩', '清淡', '午餐'], category: '鱼类', dishType: 'meat', nutrition: '鳕鱼提供优质蛋白质，番茄丰富口感。',
+    mainIngredients: ['鳕鱼', '番茄'], proteinSource: 'fish', proteinSourceType: '鱼类', textureLevel: 'chunky', mealRole: 'protein', mealSuitable: ['lunch'], difficulty: '简单', foodType: { carbohydrate: false, protein: true, vegetable: true }, mealFamily: 'tomato_cod', cookingForm: 'whole_piece',
   },
   ];
 

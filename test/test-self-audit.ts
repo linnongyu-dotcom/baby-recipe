@@ -124,7 +124,11 @@ function runFullTest(age: AgeGroup, rounds: number): TestSuite {
           );
 
           // ✅ 检查3：蛋白质不过度堆叠
-          const proteinSources = new Set(dishes.map(d => inferProteinSource(d)).filter(s => s !== 'none'));
+          // 含少量蛋白食材的辅助汤不等同于一份独立蛋白菜。
+          const proteinSources = new Set(dishes
+            .filter(d => d.dishType !== 'soup')
+            .map(d => inferProteinSource(d))
+            .filter(s => s !== 'none'));
           suite.check(
             proteinSources.size <= 2,
             loc, '蛋白质不过度堆叠', `蛋白质来源: ${[...proteinSources].join(',')}`
