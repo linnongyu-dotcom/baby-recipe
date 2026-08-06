@@ -294,9 +294,23 @@ function generateWeeklyPlanInternal(settings: UserSettings, customRecipes: Recip
  */
 export function weeklyPlanNeedsLunchRepair(plan: WeeklyPlan, age: AgeGroup): boolean {
   if (!isAge12Plus(age)) return false;
-  return DAYS_OF_WEEK.some(day =>
-    !validateMealForContext(plan[day].lunch.dishes, age, 'lunch', plan[day]).valid
-  );
+  const lunchProteins: Recipe[] = [];
+  for (const day of DAYS_OF_WEEK) {
+    const dishes = plan[day].lunch.dishes;
+    if (!validateMealForContext(dishes, age, 'lunch', plan[day]).valid) return true;
+
+    const hasSoupyStaple = dishes.some(dish => dish.dishType === 'staple' && isSoupyStaple(dish));
+    if (!hasSoupyStaple && !dishes.some(dish => dish.dishType === 'soup')) return true;
+
+    const protein = dishes.find(isLunchMeatDish);
+    if (protein) lunchProteins.push(protein);
+  }
+
+  // Old cached plans could satisfy the per-meal structure while repeating one
+  // lunch protein for the entire week. Regenerate those plans so the current
+  // weekly rotation logic gets a chance to diversify them.
+  return lunchProteins.length === DAYS_OF_WEEK.length
+    && new Set(lunchProteins.map(getRecipeFamily)).size === 1;
 }
 
 function trimWeeklyDishCount(plan: WeeklyPlan, babyAge: AgeGroup | null): void {

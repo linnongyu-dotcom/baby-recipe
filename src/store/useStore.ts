@@ -66,9 +66,9 @@ const defaultSettings: UserSettings = {
   likes: [],
 };
 
-export const PERSIST_VERSION = 43;
+export const PERSIST_VERSION = 44;
 
-/** v43 规则缓存迁移：仅使旧餐单失效，完整保留用户档案与偏好数据。 */
+/** v44 规则缓存迁移：仅使旧餐单失效，完整保留用户档案与偏好数据。 */
 export function migrateMealRuleCache<T extends Record<string, any> | null | undefined>(state: T): T {
   if (!state) return state;
   return { ...state, weeklyPlan: null } as T;
