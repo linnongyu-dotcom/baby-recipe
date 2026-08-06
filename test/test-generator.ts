@@ -123,7 +123,11 @@ function testPlan(settings: UserSettings, runNum: number, seed: number): TestRes
         }
 
         // 检查3：蛋白质堆叠（超过2种不同类型蛋白质）
-        const proteinSources = new Set(dishes.map(d => inferProteinSource(d)).filter(s => s !== 'none'));
+        // 汤中的蛋花、豆腐或少量肉末是辅助汤，不按第三份独立蛋白计数。
+        const proteinSources = new Set(dishes
+          .filter(d => d.dishType !== 'soup')
+          .map(d => inferProteinSource(d))
+          .filter(s => s !== 'none'));
         if (proteinSources.size > 2) {
           errors.push(`${dayName}${meal.label}：蛋白质来源过多(${[...proteinSources].join(',')})`);
         }

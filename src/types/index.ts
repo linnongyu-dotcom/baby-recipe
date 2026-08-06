@@ -108,7 +108,7 @@ export type TextureLevel = 'puree' | 'paste' | 'chunky' | 'family';
 
 /** 午餐独立肉菜的视觉/入口形态；与“几乎是同一道菜”的家族概念分开。 */
 export type CookingForm =
-  | 'meatball' | 'ribs' | 'shredded' | 'sliced' | 'diced' | 'minced'
+  | 'meatball' | 'patty' | 'ribs' | 'shredded' | 'sliced' | 'diced' | 'minced'
   | 'whole_piece' | 'steamed_fish' | 'braised' | 'other';
 
 // 营养标签类型

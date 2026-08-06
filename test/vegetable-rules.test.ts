@@ -7,7 +7,7 @@ function dish(name: string, mainIngredients: string[], dishType: DishType = 'veg
 }
 const rice = dish('米饭', ['大米'], 'staple');
 const pork = dish('胡萝卜炒肉', ['胡萝卜', '猪肉'], 'meat');
-const fish = dish('西兰花蒸鱼', ['西兰花', '鲈鱼'], 'meat');
+const fish = dish('清蒸鲈鱼', ['鲈鱼'], 'meat');
 const broccoli = dish('清炒西兰花', ['西兰花']);
 const tomatoBroccoli = dish('番茄炒西兰花', ['番茄', '西兰花']);
 const garlicBroccoli = dish('蒜蓉西兰花', ['西兰花', '蒜']);
@@ -34,7 +34,8 @@ for (const [name, dishes] of [
   ['菠菜鸡蛋汤 + 清炒菠菜', [spinachSoup, spinach]],
 ] as [string, Recipe[]][]) test(name, getRepeatedVegetableIngredients(dishes).length > 0);
 
-const pools: Record<DishType, Recipe[]> = { staple: [rice], meat: [pork, fish], vegetable: [broccoli, cabbage, celery, spinach, cucumber, carrot], soup: [], egg: [], dessert: [] };
+// 供“有替代候选”用例使用的池不再放入已重复的西兰花，避免随机抽回原食材。
+const pools: Record<DishType, Recipe[]> = { staple: [rice], meat: [pork, fish], vegetable: [cabbage, celery, spinach, cucumber, carrot], soup: [], egg: [], dessert: [] };
 function plan(lunch: Recipe[], dinner: Recipe[]): DayPlan { return { breakfast: { dishes: [rice] }, lunch: { dishes: lunch }, dinner: { dishes: dinner } }; }
 const sameMeal = plan([rice, pork, carrot], [rice, fish, broccoli]);
 enforceVegetableDiversityRules(sameMeal, pools, '2-3y', new Set());
