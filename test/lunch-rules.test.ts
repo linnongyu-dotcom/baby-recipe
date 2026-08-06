@@ -29,14 +29,17 @@ const porkRice = dish('猪肉焖饭', ['大米', '猪肉'], 'staple');
 const beef = dish('红烧牛肉', ['牛肉'], 'meat');
 const pork = dish('清炖猪肉', ['猪肉'], 'meat');
 const fish = dish('清蒸鲈鱼', ['鲈鱼'], 'meat');
+const chicken = dish('清蒸鸡肉', ['鸡肉'], 'meat');
+const shrimp = dish('清炒虾仁', ['虾仁'], 'meat');
 const egg = dish('番茄炒蛋', ['番茄', '鸡蛋'], 'egg');
 const boiledEgg = dish('水煮蛋', ['鸡蛋'], 'egg');
 const eggSoup = dish('番茄蛋花汤', ['番茄', '鸡蛋'], 'soup');
 const fishBallSoup = dish('鱼丸汤', ['鱼丸'], 'soup');
+const clearSoup = dish('冬瓜汤', ['冬瓜'], 'soup');
 const vegetable = dish('清炒西兰花', ['西兰花'], 'vegetable');
 const pools: Record<DishType, Recipe[]> = {
   staple: [rice, beefRice, porkRice],
-  meat: [beef, pork, fish],
+  meat: [beef, pork, fish, chicken, shrimp],
   vegetable: [vegetable],
   soup: [eggSoup],
   egg: [egg],
@@ -68,7 +71,7 @@ const porkWithPorkStaple = enforceLunchRules(
   new Set(),
   [],
 );
-test('主食含猪肉时保留独立猪肉菜', porkWithPorkStaple.dishes.some(item => item.id === pork.id));
+test('主食含猪肉时仍保留独立动物性肉菜', porkWithPorkStaple.dishes.some(isIndependentLunchMeatDish));
 test('同类猪肉可搭配后午餐仍结构合规', checkMealMandatory(porkWithPorkStaple.dishes, '2-3y', 'lunch').allOk);
 
 const beefWithBeefStaple = enforceLunchRules(
@@ -78,7 +81,7 @@ const beefWithBeefStaple = enforceLunchRules(
   new Set(),
   [],
 );
-test('无早餐牛肉避让时，主食含牛肉仍保留独立牛肉菜', beefWithBeefStaple.dishes.some(item => item.id === beef.id));
+test('无早餐牛肉避让时，主食含牛肉仍保留独立动物性肉菜', beefWithBeefStaple.dishes.some(isIndependentLunchMeatDish));
 test('同类牛肉可搭配后午餐仍有主食、独立肉菜和真实蔬菜',
   checkMealMandatory(beefWithBeefStaple.dishes, '2-3y', 'lunch').allOk);
 
@@ -98,7 +101,9 @@ const fallback = enforceLunchRules(
   new Set([beef.id, pork.id]),
   [],
 );
-test('未使用红肉耗尽后回退完整合规池', fallback.dishes.some(item => item.id === beef.id || item.id === pork.id));
+test('红肉已使用后优先回退未使用的其他动物性肉菜', fallback.dishes.some(item =>
+  item.id === fish.id || item.id === chicken.id || item.id === shrimp.id
+));
 
 const repairedBoiledEggLunch = enforceLunchRules(
   { dishes: [rice, boiledEgg, vegetable] },
@@ -150,6 +155,45 @@ test('玉米饭、紫菜虾皮汤和豆腐脑不能组成无肉午餐', repaired
   getIngredientProteinCategories(item).includes('red_meat')
 ));
 
+const weeklyProteinHistory: Recipe[] = [];
+const weeklyLunches: Recipe[][] = [];
+for (let day = 0; day < 7; day++) {
+  const lunch = enforceLunchRules(
+    { dishes: [rice, vegetable] },
+    { ...pools, staple: [rice], soup: [clearSoup, eggSoup, fishBallSoup] },
+    '2-3y',
+    new Set(weeklyProteinHistory.map(item => item.id)),
+    [],
+    weeklyProteinHistory,
+  );
+  weeklyLunches.push(lunch.dishes);
+  const protein = lunch.dishes.find(isIndependentLunchMeatDish);
+  if (protein) weeklyProteinHistory.push(protein);
+}
+const lunchProteinCategories = weeklyProteinHistory.map(item => getIngredientProteinCategories(item)[0]);
+const redCount = lunchProteinCategories.filter(category => category === 'red_meat').length;
+test('候选充足时七天红肉为2至3次', redCount >= 2 && redCount <= 3);
+test('候选充足时至少安排一次禽肉', lunchProteinCategories.includes('poultry'));
+test('候选充足时至少安排一次鱼虾', lunchProteinCategories.some(category => category === 'fish' || category === 'shrimp'));
+test('同一道独立肉菜不连续两天出现', weeklyProteinHistory.every((item, index) =>
+  index === 0 || item.id !== weeklyProteinHistory[index - 1].id
+));
+test('普通午餐有汤候选时包含且最多一道汤', weeklyLunches.every(items =>
+  items.filter(item => item.dishType === 'soup').length === 1
+));
+test('有清淡无蛋白汤时优先于蛋白汤', weeklyLunches[0].some(item => item.id === clearSoup.id));
+
+const proteinSoupLunch = enforceLunchRules(
+  { dishes: [rice, beef, vegetable] },
+  { ...pools, staple: [rice], soup: [eggSoup] },
+  '2-3y',
+  new Set(),
+  [],
+);
+test('已有独立肉菜时蛋花汤可进入且不能替代肉菜',
+  proteinSoupLunch.dishes.some(item => item.id === eggSoup.id)
+  && proteinSoupLunch.dishes.some(isIndependentLunchMeatDish));
+
 for (const age of ['1-2y', '2-3y', '3-5y'] as AgeGroup[]) {
   const settings: UserSettings = { babyAge: age, allergies: [], dislikes: [], likes: [] };
   for (let run = 0; run < 4; run++) {
@@ -157,8 +201,10 @@ for (const age of ['1-2y', '2-3y', '3-5y'] as AgeGroup[]) {
     for (const day of Object.values(plan)) {
       test(`${age} 周计划午餐结构合规`, checkMealMandatory(day.lunch.dishes, age, 'lunch').allOk);
       test(`${age} 周计划午餐有独立蛋白菜`, day.lunch.dishes.some(isIndependentProteinDish));
-      test(`${age} 周计划午餐优先红肉`, day.lunch.dishes.some(item => getIngredientProteinCategories(item).includes('red_meat')));
     }
+    const proteins = Object.values(plan).flatMap(day => day.lunch.dishes.filter(isIndependentLunchMeatDish));
+    const generatedRedCount = proteins.filter(item => getIngredientProteinCategories(item).includes('red_meat')).length;
+    test(`${age} 候选充足时周红肉保持2至3次`, generatedRedCount >= 2 && generatedRedCount <= 3);
     const context = plan.monday;
     const used = Object.values(plan).flatMap(day => [
       ...day.breakfast.dishes,
