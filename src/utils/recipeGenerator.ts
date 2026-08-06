@@ -38,7 +38,49 @@ import { getRecipeCookingForm, getRecipeFamily } from './recipeFamily';
 // 主入口：生成一周食谱
 // ============================================================
 
-export function generateWeeklyPlan(settings: UserSettings, customRecipes: Recipe[] = []): WeeklyPlan {
+export type RandomSource = () => number;
+
+export interface GenerateWeeklyPlanOptions {
+  seed?: string | number;
+  random?: RandomSource;
+}
+
+/** Stable, small PRNG suitable for reproducible menu selection (not cryptography). */
+export function createSeededRandom(seed: string | number): RandomSource {
+  const input = String(seed);
+  let state = 2166136261;
+  for (let index = 0; index < input.length; index++) {
+    state = Math.imul(state ^ input.charCodeAt(index), 16777619);
+  }
+  return () => {
+    state += 0x6d2b79f5;
+    let value = state;
+    value = Math.imul(value ^ (value >>> 15), value | 1);
+    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+let currentRandom: RandomSource = () => Math.random();
+
+export function generateWeeklyPlan(
+  settings: UserSettings,
+  customRecipesOrOptions: Recipe[] | GenerateWeeklyPlanOptions = [],
+  options: GenerateWeeklyPlanOptions = {},
+): WeeklyPlan {
+  const customRecipes = Array.isArray(customRecipesOrOptions) ? customRecipesOrOptions : [];
+  const resolvedOptions = Array.isArray(customRecipesOrOptions) ? options : customRecipesOrOptions;
+  const previousRandom = currentRandom;
+  currentRandom = resolvedOptions.random
+    ?? (resolvedOptions.seed === undefined ? (() => Math.random()) : createSeededRandom(resolvedOptions.seed));
+  try {
+    return generateWeeklyPlanInternal(settings, customRecipes);
+  } finally {
+    currentRandom = previousRandom;
+  }
+}
+
+function generateWeeklyPlanInternal(settings: UserSettings, customRecipes: Recipe[]): WeeklyPlan {
   const availableRecipes = filterRecipes(settings, customRecipes);
   const weekUsedIds = new Set<string>();
   const plan = {} as WeeklyPlan;
@@ -352,7 +394,7 @@ function createDayPlan(
   // 6-8 月龄：1-2 餐辅食，保持原有逻辑
   if (is6to8m(age)) {
     const breakfast = createSimpleBabyMeal(availableRecipes, weekUsedIds);
-    const lunch = Math.random() < 0.5
+    const lunch = currentRandom() < 0.5
       ? createSimpleBabyMeal(availableRecipes, weekUsedIds)
       : { dishes: [] };
     const dinner: MealPlan = { dishes: [] };
@@ -1194,10 +1236,10 @@ function createSimpleBabyMeal(
   const availOther = available.filter(r => otherPool.includes(r));
 
   let recipe: Recipe | null = null;
-  if (availProtein.length > 0 && Math.random() < 0.4) {
+  if (availProtein.length > 0 && currentRandom() < 0.4) {
     recipe = pickWeightedRecipe(availProtein);
   }
-  if (!recipe && Math.random() < 0.4 && proteinPool.length > 0) {
+  if (!recipe && currentRandom() < 0.4 && proteinPool.length > 0) {
     recipe = pickWeightedRecipe(proteinPool);
   }
   if (!recipe && availOther.length > 0) {
@@ -1241,7 +1283,7 @@ function createCompositeMeal(
     }
   }
 
-  const preferComposite = Math.random() < 0.7;
+  const preferComposite = currentRandom() < 0.7;
   let pool: Recipe[];
   if (preferComposite && composites.length > 0) {
     pool = composites;
@@ -1321,7 +1363,7 @@ function findRecipesForCategory(
 }
 
 function findDayMissingCategory(plan: WeeklyPlan, category: FoodCategory): DayOfWeek | null {
-  const shuffled = [...DAYS_OF_WEEK].sort(() => Math.random() - 0.5);
+  const shuffled = [...DAYS_OF_WEEK].sort(() => currentRandom() - 0.5);
   for (const day of shuffled) {
     const dayPlan = plan[day];
     const allDishes = [
@@ -1398,7 +1440,7 @@ function ensureWeeklyCoverage(
 
       let missingDay: DayOfWeek | null;
       if (check.key === 'vegetable') {
-        const shuffled = [...DAYS_OF_WEEK].sort(() => Math.random() - 0.5);
+        const shuffled = [...DAYS_OF_WEEK].sort(() => currentRandom() - 0.5);
         missingDay = shuffled.find(day => {
           const dp = plan[day];
           const allDishes = [...dp.breakfast.dishes, ...dp.lunch.dishes, ...dp.dinner.dishes];
@@ -1430,7 +1472,7 @@ function ensureWeeklyCoverage(
       } else if (age === '9-11m') {
         let replaced = false;
         const meals: ('breakfast' | 'lunch')[] = ['breakfast', 'lunch'];
-        const shuffled = [...meals].sort(() => Math.random() - 0.5);
+        const shuffled = [...meals].sort(() => currentRandom() - 0.5);
         for (const mealType of shuffled) {
           if (dayPlan[mealType].dishes.length === 0) continue;
           const existingDish = dayPlan[mealType].dishes[0];
@@ -1499,7 +1541,7 @@ function ensureWeeklyCoverage(
 
 function pickWeightedRecipe(filteredList: Recipe[]): Recipe | null {
   if (filteredList.length === 0) return null;
-  const shuffled = [...filteredList].sort(() => Math.random() - 0.5);
+  const shuffled = [...filteredList].sort(() => currentRandom() - 0.5);
   return shuffled[0];
 }
 
