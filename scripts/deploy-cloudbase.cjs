@@ -30,7 +30,7 @@ function walkDir(dir, fileList = [], basePath = dir) {
     const fp = path.join(dir, file);
     const stat = fs.statSync(fp);
     if (stat.isDirectory()) walkDir(fp, fileList, basePath);
-    else fileList.push({ localPath: fp, cloudPath: fp.replace(basePath, '').replace(/^\\/+/, ''), size: stat.size });
+    else fileList.push({ localPath: fp, cloudPath: fp.replace(basePath, '').replace(/^\//, ''), size: stat.size });
   }
   return fileList;
 }
