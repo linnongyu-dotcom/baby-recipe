@@ -1,6 +1,6 @@
 /**
  * CloudBase 静态托管部署脚本
- * 使用 @cloudbase/cli 命令行部署
+ * 使用 tcb hosting deploy 命令行部署
  * 用法: node scripts/deploy-cloudbase.cjs <secretId> <secretKey>
  */
 const { execSync } = require('child_process');
@@ -34,10 +34,10 @@ try {
     { stdio: 'inherit', timeout: 30000 }
   );
 
-  // 部署到静态托管
+  // 部署到静态托管（低并发避免网络超时）
   console.log('正在上传...');
   execSync(
-    `npx tcb hosting deploy "${distPath}" / -e ${envId}`,
+    `npx tcb hosting deploy "${distPath}" / -e ${envId} --concurrency 1 --retry-count 10 --retry-interval 5000`,
     { stdio: 'inherit', timeout: 600000 }
   );
 
