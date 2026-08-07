@@ -1,6 +1,7 @@
 /**
  * CloudBase 静态托管部署脚本
- * 使用 @cloudbase/manager-node 获取 bucket 信息，COS SDK 上传
+ * 使用 @cloudbase/manager-node 获取 bucket 信息
+ * COS SDK + 全球加速域名 + 小并发上传
  */
 const CloudBase = require('@cloudbase/manager-node');
 const COS = require('cos-nodejs-sdk-v5');
@@ -11,6 +12,7 @@ const envId = 'fanxiaobao-d9gpf87uvf3323ae7';
 const secretId = process.env.TCB_SECRET_ID || process.argv[2];
 const secretKey = process.env.TCB_SECRET_KEY || process.argv[3];
 const distPath = path.resolve(__dirname, '..', 'dist');
+const CONCURRENCY = 4; // 小并发，避免超时
 
 if (!secretId || !secretKey) {
   console.error('用法: TCB_SECRET_ID=xxx TCB_SECRET_KEY=xxx node scripts/deploy-cloudbase.cjs');
@@ -40,8 +42,31 @@ function getContentType(fp) {
   return m[path.extname(fp).toLowerCase()] || 'application/octet-stream';
 }
 
+async function uploadOne(cos, bucket, region, key, localPath) {
+  const fileSize = fs.statSync(localPath).size;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      if (fileSize > 5 * 1024 * 1024) {
+        // 大文件用分片上传，更稳定
+        await new Promise((resolve, reject) => {
+          cos.sliceUploadFile({ Bucket: bucket, Region: region, Key: key, FilePath: localPath }, (e, d) => e ? reject(e) : resolve(d));
+        });
+      } else {
+        await new Promise((resolve, reject) => {
+          cos.putObject({ Bucket: bucket, Region: region, Key: key, Body: fs.createReadStream(localPath), ContentType: getContentType(key) }, (e, d) => e ? reject(e) : resolve(d));
+        });
+      }
+      return true;
+    } catch (e) {
+      if (attempt < 3) { await new Promise(r => setTimeout(r, 3000)); }
+      else { console.error(`    失败: ${e.message}`); return false; }
+    }
+  }
+  return false;
+}
+
 async function deploy() {
-  // 1. 登录并获取 hosting bucket 信息
+  // 1. 获取 hosting bucket 信息
   console.log('获取 hosting 信息...');
   const app = new CloudBase({ envId, secretId, secretKey });
   const hosting = app.hosting;
@@ -50,41 +75,35 @@ async function deploy() {
   const { Bucket, Regoin } = info[0];
   console.log(`Bucket: ${Bucket}, Region: ${Regoin}`);
 
-  // 2. 使用 COS SDK 逐个上传
+  // 2. COS SDK（大文件分片上传，避免超时）
   const cos = new COS({ SecretId: secretId, SecretKey: secretKey, Timeout: 300000 });
   const files = walkDir(distPath);
-  console.log(`共 ${files.length} 个文件`);
+  console.log(`共 ${files.length} 个文件，并发${CONCURRENCY} 上传`);
 
-  let ok = 0;
-  for (let i = 0; i < files.length; i++) {
-    const f = files[i];
-    console.log(`[${i+1}/${files.length}] ${f.cloudPath} (${(f.size/1024).toFixed(1)}KB)`);
-    let uploaded = false;
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        await new Promise((resolve, reject) => {
-          cos.putObject({ Bucket, Region: Regoin, Key: f.cloudPath, Body: fs.createReadStream(f.localPath), ContentType: getContentType(f.cloudPath) }, (e,d) => e ? reject(e) : resolve(d));
-        });
-        ok++;
-        uploaded = true;
-        break;
-      } catch (e) {
-        if (attempt < 3) { console.log(`  重试 ${attempt+1}/3...`); await new Promise(r => setTimeout(r, 3000)); }
-        else console.error(`  失败: ${e.message}`);
-      }
+  // 3. 小并发上传
+  let ok = 0, failed = 0;
+  const queue = [...files];
+  const workers = Array.from({ length: CONCURRENCY }, async (_, wi) => {
+    while (queue.length) {
+      const f = queue.shift();
+      const idx = files.indexOf(f) + 1;
+      console.log(`[${wi + 1}] [${idx}/${files.length}] ${f.cloudPath} (${(f.size / 1024).toFixed(1)}KB)`);
+      if (await uploadOne(cos, Bucket, Regoin, f.cloudPath, f.localPath)) ok++;
+      else failed++;
     }
-  }
+  });
+  await Promise.all(workers);
 
   console.log(`\n${ok}/${files.length} 上传成功`);
 
-  // 3. SPA 路由
+  // 4. SPA 路由
   console.log('配置 SPA 路由...');
   try {
     await hosting.setWebsiteDocument({ indexDocument: 'index.html', errorDocument: 'index.html' });
     console.log('SPA 路由配置成功');
-  } catch(e) { console.error('SPA路由失败:', e.message); }
+  } catch (e) { console.error('SPA路由失败:', e.message); }
 
-  if (ok < files.length) { console.error('部分失败！'); process.exit(1); }
+  if (failed > 0) { console.error(`${failed} 个文件失败！`); process.exit(1); }
   console.log(`\n部署完成！https://${envId}.tcloudbaseapp.com`);
 }
 
