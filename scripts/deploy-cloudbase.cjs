@@ -32,7 +32,11 @@ function walkDir(dir, fileList = [], basePath = dir) {
     const fp = path.join(dir, file);
     const stat = fs.statSync(fp);
     if (stat.isDirectory()) walkDir(fp, fileList, basePath);
-    else fileList.push({ localPath: fp, cloudPath: fp.replace(basePath, '').replace(/^\//, ''), size: stat.size });
+    else {
+      // 不上传 source map（生产环境不需要，且体积大易超时）
+      if (fp.endsWith('.map')) continue;
+      fileList.push({ localPath: fp, cloudPath: fp.replace(basePath, '').replace(/^\//, ''), size: stat.size });
+    }
   }
   return fileList;
 }
@@ -44,12 +48,16 @@ function getContentType(fp) {
 
 async function uploadOne(cos, bucket, region, key, localPath) {
   const fileSize = fs.statSync(localPath).size;
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  for (let attempt = 1; attempt <= 5; attempt++) {
     try {
-      if (fileSize > 5 * 1024 * 1024) {
-        // 大文件用分片上传，更稳定
+      if (fileSize > 2 * 1024 * 1024) {
+        // 大文件用分片上传（1MB分片），海外网络更稳定
         await new Promise((resolve, reject) => {
-          cos.sliceUploadFile({ Bucket: bucket, Region: region, Key: key, FilePath: localPath }, (e, d) => e ? reject(e) : resolve(d));
+          cos.sliceUploadFile({
+            Bucket: bucket, Region: region, Key: key, FilePath: localPath,
+            SliceSize: 1024 * 1024, // 1MB 分片
+            TaskNum: 2, // 低并发
+          }, (e, d) => e ? reject(e) : resolve(d));
         });
       } else {
         await new Promise((resolve, reject) => {
@@ -58,8 +66,9 @@ async function uploadOne(cos, bucket, region, key, localPath) {
       }
       return true;
     } catch (e) {
-      if (attempt < 3) { await new Promise(r => setTimeout(r, 3000)); }
-      else { console.error(`    失败: ${e.message}`); return false; }
+      console.error(`    第${attempt}次失败: ${e.message}`);
+      if (attempt < 5) await new Promise(r => setTimeout(r, 5000));
+      else return false;
     }
   }
   return false;
