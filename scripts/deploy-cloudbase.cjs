@@ -3,7 +3,7 @@
  * 支持环境变量或命令行参数
  * 用法: node scripts/deploy-cloudbase.cjs <secretId> <secretKey>
  */
-const { CloudBase } = require('@cloudbase/manager-node');
+const CloudBase = require('@cloudbase/manager-node');
 const path = require('path');
 const fs = require('fs');
 
