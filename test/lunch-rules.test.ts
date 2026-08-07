@@ -37,6 +37,7 @@ const boiledEgg = dish('水煮蛋', ['鸡蛋'], 'egg');
 const eggSoup = dish('番茄蛋花汤', ['番茄', '鸡蛋'], 'soup');
 const fishBallSoup = dish('鱼丸汤', ['鱼丸'], 'soup');
 const clearSoup = dish('冬瓜汤', ['冬瓜'], 'soup');
+const chickenSoup = dish('香菇鸡汤', ['香菇', '鸡肉'], 'soup');
 const vegetable = dish('清炒西兰花', ['西兰花'], 'vegetable');
 const pools: Record<DishType, Recipe[]> = {
   staple: [rice, beefRice, porkRice],
@@ -84,6 +85,18 @@ const repaired = enforceLunchRules(
 test('含肉主食和汤不能替代独立蛋白菜', repaired.dishes.some(isIndependentProteinDish));
 test('最终午餐包含主食、独立蛋白菜和蔬菜', checkMealMandatory(repaired.dishes, '2-3y', 'lunch').allOk);
 test('最终午餐蔬菜来自真实主要食材', repaired.dishes.some(item => getVegetableIngredients(item).length > 0));
+
+const lunchWithMeatSoup = enforceLunchRules(
+  { dishes: [rice, beef, vegetable] },
+  { ...pools, soup: [clearSoup, chickenSoup] },
+  '2-3y',
+  new Set(),
+  [],
+);
+test('本周尚无荤汤时午餐可优先搭配不冲突的荤汤', lunchWithMeatSoup.dishes.some(item =>
+  item.id === chickenSoup.id
+));
+test('荤汤不替代午餐独立肉菜', lunchWithMeatSoup.dishes.some(isIndependentLunchMeatDish));
 
 const porkWithPorkStaple = enforceLunchRules(
   { dishes: [porkRice, pork, vegetable] },
@@ -178,12 +191,13 @@ test('玉米饭、紫菜虾皮汤和豆腐脑不能组成无肉午餐', repaired
 
 const weeklyProteinHistory: Recipe[] = [];
 const weeklyLunches: Recipe[][] = [];
+const weeklyUsedIds = new Set<string>();
 for (let day = 0; day < 7; day++) {
   const lunch = enforceLunchRules(
     { dishes: [rice, vegetable] },
     { ...pools, staple: [rice], soup: [clearSoup, eggSoup, fishBallSoup] },
     '2-3y',
-    new Set(weeklyProteinHistory.map(item => item.id)),
+    weeklyUsedIds,
     [],
     weeklyProteinHistory,
   );
@@ -202,7 +216,12 @@ test('同一道独立肉菜不连续两天出现', weeklyProteinHistory.every((i
 test('普通午餐有汤候选时包含且最多一道汤', weeklyLunches.every(items =>
   items.filter(item => item.dishType === 'soup').length === 1
 ));
-test('有清淡无蛋白汤时优先于蛋白汤', weeklyLunches[0].some(item => item.id === clearSoup.id));
+test('一周午餐先安排一次不冲突的荤汤', weeklyLunches[0].some(item =>
+  item.id === eggSoup.id || item.id === fishBallSoup.id
+));
+test('安排荤汤后仍会搭配清淡素汤', weeklyLunches.slice(1).some(items =>
+  items.some(item => item.id === clearSoup.id)
+));
 
 const proteinSoupLunch = enforceLunchRules(
   { dishes: [rice, beef, vegetable] },

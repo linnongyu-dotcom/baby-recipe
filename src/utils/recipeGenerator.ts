@@ -1727,6 +1727,12 @@ export function enforceLunchRules(
   const hasSoupyStaple = base.some(item => item.dishType === 'staple' && isSoupyStaple(item));
   if (!hasSoupyStaple && base.length < limit) {
     const soupCandidates = availableRecipes.soup.filter(suitable);
+    // 午餐汤不应固定退化为素汤：每周尚未出现过荤汤时，优先安排一道
+    // 与当前菜品食材不冲突的荤汤。之后仍优先未使用、无冲突的汤，保持
+    // 荤素汤都有，而不是把汤中的肉当成独立蛋白菜。
+    const hasUsedProteinSoup = soupCandidates.some(soup =>
+      usedIds.has(soup.id) && inferProteinSource(soup) !== 'none'
+    );
     const soupLayer = (soup: Recipe): number => {
       const unused = !usedIds.has(soup.id);
       const hasProtein = inferProteinSource(soup) !== 'none';
@@ -1734,6 +1740,7 @@ export function enforceLunchRules(
         || getIngredientProteinCategories(soup).some(category =>
           base.some(dish => getIngredientProteinCategories(dish).includes(category))
         );
+      if (!hasUsedProteinSoup && unused && !overlaps) return hasProtein ? 0 : 1;
       if (unused && !hasProtein && !overlaps) return 0;
       if (unused && !overlaps) return 1;
       if (!overlaps) return 2;
