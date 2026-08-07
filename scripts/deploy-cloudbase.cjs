@@ -31,7 +31,7 @@ const distPath = path.resolve(__dirname, '..', 'dist');
   const hosting = app.hosting;
 
   console.log('正在上传...');
-  const files = await hosting.upload({ localPath: distPath, cloudPath: '/' });
+  const files = await hosting.uploadFiles({ localPath: distPath, cloudPath: '/' });
 
   console.log('配置 SPA 路由回退...');
   await hosting.setWebsiteDocument({
