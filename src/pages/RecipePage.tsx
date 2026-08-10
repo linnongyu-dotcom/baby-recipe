@@ -5,6 +5,7 @@ import { Settings, Download, ChevronDown, Loader2, Share2, Check, User } from 'l
 import { useStore } from '@/store/useStore';
 import { Button } from '@/components/common/Button';
 import { Modal } from '@/components/common/Modal';
+import { FeedingDisclaimer } from '@/components/common/FeedingDisclaimer';
 import { RecipeCard } from '@/components/recipe/RecipeCard';
 import { ComplementaryFeedingPlan } from '@/components/recipe/ComplementaryFeedingPlan';
 import { FoodTracker } from '@/components/recipe/FoodTracker';
@@ -554,6 +555,8 @@ export function RecipePage() {
             )}
           </div>
         </motion.div>
+
+        <FeedingDisclaimer className="mb-6" />
 
         {/* 0-5月龄：婴儿喂养期 */}
         {!isShareMode && isInfantFeeding && (
@@ -1223,7 +1226,8 @@ export function RecipePage() {
           transition={{ delay: 0.7 }}
           className="mt-8 text-center text-gray-400 text-xs"
         >
-          <p>营养数据参考</p>
+          <FeedingDisclaimer compact className="mb-2" />
+          <p>营养数据来源参考</p>
           <p>《中国居民膳食指南（2022）》《中国居民膳食营养素参考摄入量（DRIs）》</p>
           <p>《中国学龄前儿童膳食指南（2022）》《中国7～24月龄婴幼儿喂养指南（2022）》</p>
         </motion.div>

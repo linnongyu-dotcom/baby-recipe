@@ -86,6 +86,9 @@ function buildRecipeHTML(weeklyPlan: WeeklyPlan, ageLabel: string, targetDay?: D
     html += `<h1 style="text-align:center;font-size:22px;font-weight:700;color:#6d28d9;margin:0 0 4px 0;">📖 宝宝一周营养食谱</h1>`;
   }
   html += `<p style="text-align:center;font-size:13px;color:#888;margin:0 0 20px 0;">${ageLabel} · ${BRAND.name} · ${dateStr}</p>`;
+  html += `<div style="margin:0 0 16px;padding:10px 12px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;color:#92400e;font-size:11px;line-height:1.6;">`;
+  html += `<strong>重要提示 · 仅供参考：</strong>食谱搭配、食材用量、奶量及营养分析为通用信息，不替代儿科医生或注册营养师的诊断与个体化建议。请结合宝宝的生长发育、吞咽能力、疾病史、过敏史及医嘱调整；如喂食后出现严重不适，请立即停止并及时就医。`;
+  html += `</div>`;
 
   for (let di = 0; di < days.length; di++) {
     const day = days[di];
