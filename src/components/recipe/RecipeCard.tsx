@@ -30,7 +30,6 @@ interface RecipeCardProps {
 export function RecipeCard({
   mealPlan,
   mealType,
-  ageGroup: _ageGroup,
   onRefresh,
   onReplaceDish,
   onRemoveDish,
@@ -332,6 +331,7 @@ export function RecipeCard({
           }}
           onCancel={() => setShowAddDish(false)}
           usedIds={new Set(mealPlan.dishes.map(d => d.id))}
+          mealType={mealType}
         />
       </Modal>
 

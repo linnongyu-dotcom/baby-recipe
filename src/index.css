@@ -107,4 +107,22 @@ body {
   .grid-cols-2 {
     grid-template-columns: 1fr;
   }
+}@layer components {
+ .field { @apply w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-white outline-none focus:ring-2 focus:ring-purple-300 min-w-0; }
+ .primary { @apply rounded-xl bg-purple-600 text-white px-4 py-2.5 font-medium hover:bg-purple-700; }
+ .secondary { @apply rounded-xl border border-purple-200 bg-white text-purple-700 px-3 py-2 text-sm hover:bg-purple-50; }
+ .tag { @apply text-xs rounded-full bg-purple-50 text-purple-700 px-2 py-1; }
+ .form-card { @apply bg-white rounded-2xl shadow-sm p-4 space-y-2; }
+ .form-card label { @apply block text-sm font-medium text-gray-700 mt-3; }
+ .form-card h2 { @apply font-semibold text-gray-800; }
+ .choices { @apply flex flex-wrap gap-2; }
+ .choices button { @apply rounded-full border border-gray-200 px-3 py-1.5 text-sm bg-white; }
+ .choices button.chosen { @apply bg-purple-100 border-purple-400 text-purple-700; }
+ .tab { @apply flex-1 rounded-lg py-2 text-sm text-gray-600; }
+ .tab.active { @apply bg-white text-purple-700 shadow-sm font-medium; }
+ .menu-btn { @apply flex w-full items-center gap-2 rounded-lg p-2 text-sm hover:bg-purple-50; }
+ .menu-btn svg { @apply w-4 h-4; }
+ .modal { @apply fixed inset-0 z-50 bg-black/30 flex items-end sm:items-center justify-center; }
+ .sheet { @apply bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl p-5 space-y-3 max-h-[85dvh] overflow-y-auto pb-[max(1.25rem,env(safe-area-inset-bottom))]; }
+ .sheet label { @apply block text-sm font-medium mt-3; }
 }

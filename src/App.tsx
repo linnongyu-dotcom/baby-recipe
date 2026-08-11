@@ -5,6 +5,7 @@ import { RecipePage } from '@/pages/RecipePage';
 import { BabyProfilePage } from '@/pages/BabyProfilePage';
 import { useStore } from '@/store/useStore';
 import { setPageTitle } from '@/config/brand';
+import { MyRecipesPage, NewUserRecipePage, UserRecipeDetailPage, UserRecipeFormPage } from '@/pages/MyRecipesPage';
 
 export default function App() {
   useEffect(() => {
@@ -18,6 +19,11 @@ export default function App() {
         <Route path="/recipe" element={<RecipePage />} />
         <Route path="/setup" element={<SetupPage />} />
         <Route path="/baby-profile" element={<BabyProfilePage />} />
+        <Route path="/my-recipes" element={<MyRecipesPage />} />
+        <Route path="/my-recipes/new" element={<NewUserRecipePage />} />
+        <Route path="/my-recipes/new/edit" element={<UserRecipeFormPage />} />
+        <Route path="/my-recipes/:id" element={<UserRecipeDetailPage />} />
+        <Route path="/my-recipes/:id/edit" element={<UserRecipeFormPage />} />
       </Routes>
     </Router>
   );

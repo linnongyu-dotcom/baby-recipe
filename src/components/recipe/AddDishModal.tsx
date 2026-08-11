@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Plus, Search, ChefHat, Heart } from 'lucide-react';
-import { Recipe, DishType, DISH_TYPE_LABELS, DISH_TYPE_ICONS, UserSettings, FoodRecord } from '@/types';
+import { Recipe, DishType, DISH_TYPE_LABELS, DISH_TYPE_ICONS, UserSettings, MealType, UserRecipe } from '@/types';
 import { recipes } from '@/data/recipes';
 import { createCustomRecipe } from '@/utils/recipeGenerator';
 import { Button } from '@/components/common/Button';
@@ -11,9 +11,10 @@ interface AddDishModalProps {
   onAdd: (recipe: Recipe) => void;
   onCancel: () => void;
   usedIds: Set<string>;
+  mealType: MealType;
 }
 
-type Step = 'category' | 'recommend' | 'custom';
+type Step = 'category' | 'recommend' | 'custom' | 'mine';
 
 const CATEGORIES: { type: DishType; icon: string; label: string; color: string }[] = [
   { type: 'staple', icon: '🍚', label: '主食', color: 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100' },
@@ -61,8 +62,13 @@ function scoreByAcceptedFoods(recipe: Recipe, acceptedFoodNames: string[]): numb
   return score;
 }
 
-export function AddDishModal({ onAdd, onCancel, usedIds }: AddDishModalProps) {
-  const { settings, customRecipes, addCustomRecipe, favoriteIds, toggleFavorite, foodRecords } = useStore();
+function userSnapshot(item: UserRecipe): Recipe {
+  const types: Record<string, string> = { 谷薯类:'主食来源', 肉类:'优质蛋白', 鱼虾:'优质蛋白', 蛋类:'优质蛋白', 豆制品:'谷豆搭配', 蔬菜:'蔬菜来源', 水果:'水果来源', 奶制品:'奶类来源' };
+  return { id:`snapshot_${item.id}_${Date.now()}`, name:item.name, ingredients:item.ingredients.map(i=>({name:i.name,amount:i.amount||'适量'})), steps:[...item.steps], ageGroups:[...item.ageRanges], tags:item.nutritionTags.map(t=>types[t]||t), category:item.category?DISH_TYPE_LABELS[item.category]:'我的食谱', dishType:item.category||'staple', nutrition:item.nutritionTags.join('、')||'营养信息待补充', mainIngredients:item.ingredients.map(i=>i.name), mealSuitable:item.mealTypes.filter((m):m is MealType=>m!=='snack') };
+}
+
+export function AddDishModal({ onAdd, onCancel, usedIds, mealType }: AddDishModalProps) {
+  const { settings, customRecipes, addCustomRecipe, favoriteIds, toggleFavorite, foodRecords, userRecipes, markUserRecipeUsed } = useStore();
   const [step, setStep] = useState<Step>('category');
   const [selectedType, setSelectedType] = useState<DishType>('meat');
   const [searchText, setSearchText] = useState('');
@@ -169,7 +175,12 @@ export function AddDishModal({ onAdd, onCancel, usedIds }: AddDishModalProps) {
       {/* 类别选择 */}
       {step === 'category' && (
         <>
-          <p className="text-sm text-gray-500 mb-4">选择要添加的菜品类型</p>
+          <p className="text-sm text-gray-500 mb-3">选择菜品来源</p>
+          <button onClick={() => setStep('mine')} disabled={settings.babyAge === '6-8m'} className="w-full mb-4 p-3 rounded-xl border border-purple-200 bg-purple-50 text-purple-700 font-medium disabled:opacity-50">
+            从我的食谱选择
+            {settings.babyAge === '6-8m' && <span className="block text-xs font-normal mt-1">当前月龄暂不支持安排每日食谱</span>}
+          </button>
+          <p className="text-sm text-gray-500 mb-3">从系统食谱选择</p>
           <div className="grid grid-cols-2 gap-3">
             {CATEGORIES.map((cat) => {
               const count = filterAvailable(cat.type, settings, usedIds, customRecipes).length;
@@ -195,6 +206,12 @@ export function AddDishModal({ onAdd, onCancel, usedIds }: AddDishModalProps) {
           </div>
         </>
       )}
+
+      {step === 'mine' && <>
+        <div className="flex items-center gap-3 mb-4"><button onClick={()=>setStep('category')} className="p-2"><ArrowLeft className="w-4"/></button><b>从我的食谱选择</b></div>
+        <div className="relative mb-3"><Search className="absolute left-3 top-3 w-4 text-gray-400"/><input className="field pl-9" placeholder="搜索名称或食材" value={searchText} onChange={e=>setSearchText(e.target.value)}/></div>
+        <div className="space-y-2 max-h-[45vh] overflow-y-auto">{userRecipes.filter(r=>r.status==='complete'&&(!settings.babyAge||r.ageRanges.length===0||r.ageRanges.includes(settings.babyAge))&&(r.mealTypes.length===0||r.mealTypes.includes(mealType))&&(!searchText||`${r.name} ${r.ingredients.map(i=>i.name).join(' ')}`.includes(searchText))).map(r=><button key={r.id} onClick={()=>{onAdd(userSnapshot(r));markUserRecipeUsed(r.id)}} className="w-full text-left rounded-xl border p-3 hover:bg-purple-50"><b>{r.name}</b><p className="text-xs text-gray-500 mt-1">{r.ingredients.slice(0,3).map(i=>i.name).join('、')}</p></button>)}{!userRecipes.length&&<p className="text-center text-gray-400 py-8">还没有我的食谱</p>}</div>
+      </>}
 
       {/* 系统推荐 */}
       {step === 'recommend' && (
