@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { UserSettings, WeeklyPlan, Recipe, DayOfWeek, MealType, MealPlan, FoodRecord, BabyProfile, AgeGroup } from '../types';
+import { UserSettings, WeeklyPlan, Recipe, DayOfWeek, MealType, MealPlan, FoodRecord, BabyProfile, AgeGroup, UserRecipe } from '../types';
 import { generateWeeklyPlan, regenerateMeal, replaceDishInMeal, swapMeals } from '../utils/recipeGenerator';
 import { calcAge, generateBabyId, estimateBirthDateFromAgeGroup } from '../utils/babyProfile';
 import { isIndependentLunchMeatDish } from '../utils/mealValidator';
@@ -28,6 +28,7 @@ interface AppState {
   babies: BabyProfile[];
   // 当前选中的宝宝ID
   currentBabyId: string | null;
+  userRecipes: UserRecipe[];
 
   // 操作方法
   setBabyAge: (age: UserSettings['babyAge']) => void;
@@ -57,6 +58,14 @@ interface AppState {
   updateBaby: (id: string, updates: Partial<BabyProfile>) => void;
   removeBaby: (id: string) => void;
   setCurrentBaby: (id: string) => void;
+  addUserRecipe: (recipe: UserRecipe) => boolean;
+  updateUserRecipe: (id: string, updates: Partial<UserRecipe>) => void;
+  deleteUserRecipe: (id: string) => void;
+  duplicateUserRecipe: (id: string) => string | null;
+  getUserRecipeById: (id: string) => UserRecipe | undefined;
+  markUserRecipeUsed: (id: string) => void;
+  exportUserRecipes: () => string;
+  importUserRecipes: (value: unknown) => { success: number; duplicate: number; failed: number };
 }
 
 const defaultSettings: UserSettings = {
@@ -66,7 +75,7 @@ const defaultSettings: UserSettings = {
   likes: [],
 };
 
-export const PERSIST_VERSION = 44;
+export const PERSIST_VERSION = 45;
 
 /** v44 规则缓存迁移：仅使旧餐单失效，完整保留用户档案与偏好数据。 */
 export function migrateMealRuleCache<T extends Record<string, any> | null | undefined>(state: T): T {
@@ -99,6 +108,7 @@ export const useStore = create<AppState>()(
       feedingMonth: 6,
       babies: [],
       currentBabyId: null,
+      userRecipes: [],
 
       setBabyAge: (age) => set((state) => ({
         settings: { ...state.settings, babyAge: age },
@@ -390,6 +400,42 @@ export const useStore = create<AppState>()(
           },
         });
       },
+
+      addUserRecipe: (recipe) => {
+        if (get().userRecipes.some(item => item.id === recipe.id)) return false;
+        set(state => ({ userRecipes: [...state.userRecipes, recipe] }));
+        return true;
+      },
+      updateUserRecipe: (id, updates) => set(state => ({
+        userRecipes: state.userRecipes.map(item => item.id === id ? { ...item, ...updates, id, updatedAt: new Date().toISOString() } : item),
+      })),
+      deleteUserRecipe: (id) => set(state => ({ userRecipes: state.userRecipes.filter(item => item.id !== id) })),
+      duplicateUserRecipe: (id) => {
+        const source = get().userRecipes.find(item => item.id === id);
+        if (!source) return null;
+        const now = new Date().toISOString();
+        const newId = `user_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+        set(state => ({ userRecipes: [...state.userRecipes, { ...source, id: newId, name: `${source.name} 副本`, createdAt: now, updatedAt: now, lastUsedAt: undefined, usageCount: 0, ingredients: source.ingredients.map(i => ({ ...i, id: `${i.id}_copy_${Math.random().toString(36).slice(2, 5)}` })) }] }));
+        return newId;
+      },
+      getUserRecipeById: (id) => get().userRecipes.find(item => item.id === id),
+      markUserRecipeUsed: (id) => set(state => ({ userRecipes: state.userRecipes.map(item => item.id === id ? { ...item, lastUsedAt: new Date().toISOString(), usageCount: item.usageCount + 1 } : item) })),
+      exportUserRecipes: () => JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), userRecipes: get().userRecipes }, null, 2),
+      importUserRecipes: (value) => {
+        const rows = (value as { userRecipes?: unknown })?.userRecipes;
+        if (!Array.isArray(rows)) return { success: 0, duplicate: 0, failed: 1 };
+        let success = 0, duplicate = 0, failed = 0;
+        const existing = [...get().userRecipes];
+        for (const row of rows) {
+          if (!row || typeof row !== 'object' || typeof (row as UserRecipe).name !== 'string' || !Array.isArray((row as UserRecipe).ingredients)) { failed++; continue; }
+          const candidate = row as UserRecipe;
+          if (existing.some(item => item.name === candidate.name && item.originalText && item.originalText === candidate.originalText)) { duplicate++; continue; }
+          const id = existing.some(item => item.id === candidate.id) ? `user_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}` : candidate.id;
+          existing.push({ ...candidate, id, sourceType: 'user', usageCount: Number(candidate.usageCount) || 0 }); success++;
+        }
+        if (success) set({ userRecipes: existing });
+        return { success, duplicate, failed };
+      },
     }),
     {
       name: 'baby-recipe-storage',
@@ -397,7 +443,8 @@ export const useStore = create<AppState>()(
       migrate: (persistedState: any, version: number) => {
         // v44 包含午餐独立肉菜和普通午餐配汤规则。清掉 v43 及更早
         // 的已缓存周餐单，避免界面继续展示不符合当前规则的旧餐单。
-        if (version >= 40 && version < PERSIST_VERSION) return migrateMealRuleCache(persistedState);
+        if (version >= 40 && version < 44) return migrateMealRuleCache(persistedState);
+        if (version === 44) return { ...persistedState, userRecipes: persistedState?.userRecipes || [] };
         if (version < 30) {
           return {
             settings: persistedState?.settings || defaultSettings,

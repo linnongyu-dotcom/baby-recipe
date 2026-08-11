@@ -1,7 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, useSearchParams, Navigate } from 'react-router-dom';
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { Settings, Download, ChevronDown, Loader2, Share2, Check, User } from 'lucide-react';
+import { Settings, Download, ChevronDown, Loader2, Share2, User, BookOpen, MoreHorizontal } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { Button } from '@/components/common/Button';
 import { Modal } from '@/components/common/Modal';
@@ -244,10 +244,11 @@ export function RecipePage() {
   const shareParam = searchParams.get('share');
   const [sharedData, setSharedData] = useState<{ weeklyPlan: WeeklyPlan; ageLabel: string; ageGroup?: AgeGroup } | null>(null);
   const [showNutritionGuide, setShowNutritionGuide] = useState(false);
-  const [downloading, setDownloading] = useState(false);
+  const [, setDownloading] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
   const [showWeeklyPlan, setShowWeeklyPlan] = useState(false);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [expandedWeekDays, setExpandedWeekDays] = useState<Set<DayOfWeek>>(new Set());
   const lunchRepairState = useRef<{ signature: string; attempts: number }>({ signature: '', attempts: 0 });
 
@@ -521,7 +522,7 @@ export function RecipePage() {
             ) : null}
           </div>
 
-          <div className="flex gap-2 flex-shrink-0">
+          <div className="flex gap-1 sm:gap-2 flex-shrink-0">
             {/* 宝宝选择器 */}
             {!isShareMode && currentBaby && (
               <BabySelector onNavigateToProfile={() => navigate('/baby-profile')} />
@@ -534,9 +535,9 @@ export function RecipePage() {
             )}
             {!isShareMode && (
               <>
-                <Button onClick={() => navigate('/setup')} variant="outline" size="sm">
-                  <Settings className="w-4 h-4" />
-                  设置
+                <Button onClick={() => navigate('/my-recipes')} variant="outline" size="sm" className="whitespace-nowrap">
+                  <BookOpen className="w-4 h-4" />
+                  我的食谱
                 </Button>
                 {/* 分享功能暂时隐藏，跳转链接404 */}
                 {/* {!isInfantFeeding && (
@@ -547,14 +548,17 @@ export function RecipePage() {
                 )} */}
               </>
             )}
-            {!is6to8m && !isInfantFeeding && (
-            <Button onClick={() => setShowDownloadModal(true)} variant="secondary" size="sm" disabled={downloading}>
-              {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-              {downloading ? '生成中…' : '下载'}
-            </Button>
-            )}
+            {!isShareMode && <button aria-label="更多功能" onClick={() => setShowMoreMenu(true)} className="p-2 rounded-xl hover:bg-purple-100"><MoreHorizontal className="w-5 h-5" /></button>}
           </div>
         </motion.div>
+
+        <Modal isOpen={showMoreMenu} onClose={() => setShowMoreMenu(false)} title="更多">
+          <div className="space-y-2">
+            <button onClick={() => navigate('/setup')} className="menu-btn"><Settings />宝宝与偏好设置</button>
+            {!is6to8m && !isInfantFeeding && <button onClick={() => { setShowMoreMenu(false); setShowDownloadModal(true); }} className="menu-btn"><Download />下载今日或本周食谱</button>}
+            {!isInfantFeeding && <button onClick={() => { setShowMoreMenu(false); handleShare(); }} className="menu-btn"><Share2 />{shareCopied ? '分享链接已复制' : '分享食谱'}</button>}
+          </div>
+        </Modal>
 
         <FeedingDisclaimer className="mb-6" />
 
@@ -887,7 +891,7 @@ export function RecipePage() {
                     </p>
                   );
                 }
-                return untriedFoods.map((food, i) => (
+                return untriedFoods.map((food) => (
                   <div key={food.name} className="flex items-start gap-3 p-3 bg-amber-50 rounded-xl">
                     <span className="text-2xl flex-shrink-0">{food.icon}</span>
                     <div className="flex-1 min-w-0">

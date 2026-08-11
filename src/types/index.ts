@@ -77,6 +77,34 @@ export interface Ingredient {
   amount: string;
 }
 
+/** 用户从外部整理并保存的个人食谱；与系统 Recipe 分开持久化。 */
+export type UserRecipeMealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
+export type UserRecipeNutritionTag = '谷薯类' | '肉类' | '鱼虾' | '蛋类' | '豆制品' | '蔬菜' | '水果' | '奶制品';
+export interface UserRecipeIngredient { id: string; name: string; amount?: string; note?: string }
+export interface UserRecipe {
+  id: string;
+  sourceType: 'user';
+  name: string;
+  ingredients: UserRecipeIngredient[];
+  steps: string[];
+  ageRanges: AgeGroup[];
+  mealTypes: UserRecipeMealType[];
+  category?: DishType;
+  nutritionTags: UserRecipeNutritionTag[];
+  cookingTime?: number;
+  difficulty?: 'easy' | 'medium' | 'hard';
+  notes?: string;
+  safetyNotes?: string;
+  sourcePlatform?: string;
+  sourceUrl?: string;
+  originalText?: string;
+  status: 'complete' | 'draft';
+  createdAt: string;
+  updatedAt: string;
+  lastUsedAt?: string;
+  usageCount: number;
+}
+
 // 菜品类型（荤菜/素菜/主食/汤/蛋）
 export type DishType = 'staple' | 'meat' | 'vegetable' | 'soup' | 'egg' | 'dessert';
 
