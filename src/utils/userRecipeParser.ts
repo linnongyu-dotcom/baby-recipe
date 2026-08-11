@@ -1,7 +1,10 @@
 import type { AgeGroup, UserRecipe, UserRecipeIngredient, UserRecipeMealType, UserRecipeNutritionTag } from '@/types';
 
 const heading = /^(食材|准备食材|所需食材|用料|做法|制作方法|步骤|制作步骤|烹饪步骤|适合月龄|适合年龄|小贴士|注意事项)\s*[：:]?\s*(.*)$/;
+const detailedStepsHeading = /保姆级步骤\s*[：:]?\s*(.*)$/;
 const noise = /^(#\S+\s*)+$|^(收藏|点赞|关注|转发).{0,10}$/;
+const chineseStepMarker = /^\[([一二三四五六七八九十])R\]\s*/;
+const socialMarker = /^\[[^\]\n]{1,12}R\]\s*/;
 export type ParsedRecipe = Pick<UserRecipe, 'name'|'ingredients'|'steps'|'ageRanges'|'mealTypes'|'nutritionTags'|'safetyNotes'|'originalText'> & { incomplete: boolean; multiple: boolean };
 
 const uid = () => `ing_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
@@ -13,7 +16,12 @@ function ingredient(value: string): UserRecipeIngredient | null {
 }
 export function parseUserRecipeText(raw: string): ParsedRecipe {
   const originalText = raw.slice(0, 30000);
-  const lines = originalText.replace(/\r/g, '').split('\n').map(v => v.trim()).filter(v => v && !noise.test(v));
+  // 小红书复制文本常带有“[一R]”“[种草R]”等图片标记：序号标记转成步骤，装饰标记直接移除。
+  const lines = originalText.replace(/\r/g, '').split('\n').map(value => {
+    const trimmed = value.trim();
+    const numbered = trimmed.match(chineseStepMarker);
+    return numbered ? trimmed.replace(chineseStepMarker, `第${numbered[1]}步 `) : trimmed.replace(socialMarker, '');
+  }).filter(v => v && !noise.test(v));
   let section: 'ingredients'|'steps'|'age'|'tips'|null = null;
   let name = ''; const ingredients: UserRecipeIngredient[] = []; const steps: string[] = []; const tips: string[] = [];
   const addSteps = (value: string) => {
@@ -30,6 +38,14 @@ export function parseUserRecipeText(raw: string): ParsedRecipe {
     else if (section === 'tips') tips.push(value);
   };
   for (const line of lines) {
+    // “保姆级步骤”前常混有 emoji、账号文案或平台标记，不能要求它位于行首。
+    // 一旦出现该标题，下面的普通文本行也都按步骤处理，直到遇到其他分区标题。
+    const detailedSteps = line.match(detailedStepsHeading);
+    if (detailedSteps) {
+      section = 'steps';
+      addSectionContent(detailedSteps[1]);
+      continue;
+    }
     const h = line.match(heading);
     if (h) {
       section = /食材|用料/.test(h[1]) ? 'ingredients' : /做法|步骤|烹饪/.test(h[1]) ? 'steps' : /年龄|月龄/.test(h[1]) ? 'age' : 'tips';
