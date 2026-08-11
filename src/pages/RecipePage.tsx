@@ -6,6 +6,7 @@ import { useStore } from '@/store/useStore';
 import { Button } from '@/components/common/Button';
 import { Modal } from '@/components/common/Modal';
 import { FeedingDisclaimer } from '@/components/common/FeedingDisclaimer';
+import { RecipeSafetyNotice } from '@/components/common/RecipeSafetyNotice';
 import { RecipeCard } from '@/components/recipe/RecipeCard';
 import { ComplementaryFeedingPlan } from '@/components/recipe/ComplementaryFeedingPlan';
 import { FoodTracker } from '@/components/recipe/FoodTracker';
@@ -18,6 +19,7 @@ import { encodeShareData, decodeShareData } from '@/utils/shareUtils';
 import { analyzeDayNutrition, analyzeWeekNutrition, generateSnacks, getMilkTip } from '@/utils/nutritionEngine';
 import { BRAND, BRAND_ASSETS, setPageTitle } from '@/config/brand';
 import { weeklyPlanNeedsLunchRepair } from '@/utils/recipeGenerator';
+import { getSafetyNoticeKey, hasReadSafetyNotice, markSafetyNoticeRead } from '@/utils/safetyNotice';
 
 interface NutritionGuide {
   title: string;
@@ -249,6 +251,7 @@ export function RecipePage() {
   const [showWeeklyPlan, setShowWeeklyPlan] = useState(false);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [showSafetyNotice, setShowSafetyNotice] = useState(false);
   const [expandedWeekDays, setExpandedWeekDays] = useState<Set<DayOfWeek>>(new Set());
   const lunchRepairState = useRef<{ signature: string; attempts: number }>({ signature: '', attempts: 0 });
 
@@ -260,6 +263,14 @@ export function RecipePage() {
   const isUnderOneYear = babyAgeInfo?.isUnderOneYear ?? true;
   const mealLabels = getMealLabels(isUnderOneYear);
   const mealIcons = getMealIcons(isUnderOneYear);
+  const safetyNoticeKey = currentBaby && babyAgeInfo
+    ? getSafetyNoticeKey(currentBaby.id, babyAgeInfo.ageGroup, babyAgeInfo.growthStage)
+    : null;
+
+  const acknowledgeSafetyNotice = () => {
+    if (safetyNoticeKey) markSafetyNoticeRead(window.localStorage, safetyNoticeKey);
+    setShowSafetyNotice(false);
+  };
 
   // 阶段标识
   const is6to8m = effectiveAgeGroup === '6-8m';
@@ -307,6 +318,11 @@ export function RecipePage() {
   }, [shareParam]);
 
   const isShareMode = !!sharedData;
+
+  useEffect(() => {
+    if (isShareMode || !safetyNoticeKey) return;
+    setShowSafetyNotice(!hasReadSafetyNotice(window.localStorage, safetyNoticeKey));
+  }, [isShareMode, safetyNoticeKey]);
 
   useEffect(() => {
     if (isShareMode) {
@@ -560,7 +576,13 @@ export function RecipePage() {
           </div>
         </Modal>
 
-        <FeedingDisclaimer className="mb-6" />
+        {!isShareMode && (
+          <RecipeSafetyNotice
+            isOpen={showSafetyNotice}
+            onClose={() => setShowSafetyNotice(false)}
+            onAcknowledge={acknowledgeSafetyNotice}
+          />
+        )}
 
         {/* 0-5月龄：婴儿喂养期 */}
         {!isShareMode && isInfantFeeding && (
@@ -1230,7 +1252,7 @@ export function RecipePage() {
           transition={{ delay: 0.7 }}
           className="mt-8 text-center text-gray-400 text-xs"
         >
-          <FeedingDisclaimer compact className="mb-2" />
+          <FeedingDisclaimer className="mb-2" onShowSafetyNotice={() => setShowSafetyNotice(true)} />
           <p>营养数据来源参考</p>
           <p>《中国居民膳食指南（2022）》《中国居民膳食营养素参考摄入量（DRIs）》</p>
           <p>《中国学龄前儿童膳食指南（2022）》《中国7～24月龄婴幼儿喂养指南（2022）》</p>
