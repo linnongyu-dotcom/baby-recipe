@@ -8,6 +8,7 @@ import { Modal } from '@/components/common/Modal';
 import { GROWTH_STAGE_INFO, BabyProfile } from '@/types';
 import { calcAge } from '@/utils/babyProfile';
 import { setPageTitle } from '@/config/brand';
+import { AccountSection } from '@/components/auth/AccountSection';
 
 export function BabyProfilePage() {
   const navigate = useNavigate();
@@ -92,6 +93,8 @@ export function BabyProfilePage() {
             <p className="text-sm text-gray-500 mt-0.5">管理宝宝信息，精准推荐合适内容</p>
           </div>
         </motion.div>
+
+        <AccountSection />
 
         {/* 宝宝列表 */}
         <div className="space-y-3 mb-6">

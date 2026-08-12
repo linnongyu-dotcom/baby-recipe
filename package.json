@@ -19,6 +19,7 @@
     "test:recipe-data": "node scripts/run-ts-test.mjs test/recipe-data.test.ts",
     "test:meal-all": "npm run test:meal-rules && npm run test:breakfast-rules && npm run test:lunch-rules && npm run test:dinner-rules && npm run test:vegetable-rules && npm run test:meal-refresh-rules && npm run test:meal-stress && npm run test:weekly-plan-audit && node scripts/run-ts-test.mjs test/test-generator.ts && node scripts/run-ts-test.mjs test/test-self-audit.ts && node scripts/run-ts-test.mjs test/test-daily-meal-plan.ts",
     "test:weekly-plan-audit": "node scripts/run-ts-test.mjs test/weekly-plan-audit.test.ts",
+    "test:cloud-sync": "node scripts/run-ts-test.mjs test/cloud-sync.test.ts",
     "audit:meal-plans": "node scripts/run-ts-test.mjs scripts/audit-meal-plans.ts"
   },
   "dependencies": {
