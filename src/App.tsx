@@ -6,14 +6,18 @@ import { BabyProfilePage } from '@/pages/BabyProfilePage';
 import { useStore } from '@/store/useStore';
 import { setPageTitle } from '@/config/brand';
 import { MyRecipesPage, NewUserRecipePage, UserRecipeDetailPage, UserRecipeFormPage } from '@/pages/MyRecipesPage';
+import { initializeSync } from '@/services/syncCoordinator';
+import { DataConflictDialog } from '@/components/auth/DataConflictDialog';
 
 export default function App() {
   useEffect(() => {
     setPageTitle();
+    void initializeSync();
   }, []);
 
   return (
     <Router>
+      <DataConflictDialog />
       <Routes>
         <Route path="/" element={<HomeRoute />} />
         <Route path="/recipe" element={<RecipePage />} />

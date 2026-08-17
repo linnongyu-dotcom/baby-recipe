@@ -4,8 +4,10 @@ import { UserSettings, WeeklyPlan, Recipe, DayOfWeek, MealType, MealPlan, FoodRe
 import { generateWeeklyPlan, regenerateMeal, replaceDishInMeal, swapMeals } from '../utils/recipeGenerator';
 import { calcAge, generateBabyId, estimateBirthDateFromAgeGroup } from '../utils/babyProfile';
 import { isIndependentLunchMeatDish } from '../utils/mealValidator';
+import { createJSONStorage } from 'zustand/middleware';
+import { identityStorage, migrateLegacyStorage, normalizeStableIds } from '../services/localSpaceService';
 
-interface AppState {
+export interface AppState {
   // 用户设置
   settings: UserSettings;
   // 一周食谱
@@ -76,6 +78,8 @@ const defaultSettings: UserSettings = {
 };
 
 export const PERSIST_VERSION = 45;
+
+if (typeof localStorage !== 'undefined') migrateLegacyStorage();
 
 /** v44 规则缓存迁移：仅使旧餐单失效，完整保留用户档案与偏好数据。 */
 export function migrateMealRuleCache<T extends Record<string, any> | null | undefined>(state: T): T {
@@ -438,9 +442,11 @@ export const useStore = create<AppState>()(
       },
     }),
     {
-      name: 'baby-recipe-storage',
+      name: 'fanxiaobao:active',
+      storage: createJSONStorage(() => identityStorage),
       version: PERSIST_VERSION,
       migrate: (persistedState: any, version: number) => {
+        persistedState = normalizeStableIds(persistedState || {});
         // v44 包含午餐独立肉菜和普通午餐配汤规则。清掉 v43 及更早
         // 的已缓存周餐单，避免界面继续展示不符合当前规则的旧餐单。
         if (version >= 40 && version < 44) return migrateMealRuleCache(persistedState);
