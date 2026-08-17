@@ -2,7 +2,6 @@
 import { getCloudBaseApp } from '@/lib/cloudbase';
 
 export interface AuthUser { uid: string; email?: string }
-export type EmailVerificationInfo = Record<string, unknown>;
 
 function authApi(): any {
   const app = getCloudBaseApp();
@@ -23,20 +22,20 @@ export async function restoreSession(): Promise<AuthUser | null> {
   return userOf(await auth.getLoginState?.());
 }
 
-export async function sendEmailCode(email: string): Promise<EmailVerificationInfo> {
+export async function sendEmailCode(email: string): Promise<void> {
   const auth = authApi();
-  if (typeof auth.getVerification !== 'function') {
+  if (typeof auth.sendEmailVerificationCode !== 'function') {
     throw new Error('当前 CloudBase Web SDK/环境未提供邮箱验证码登录，请在控制台启用邮箱验证码认证并升级 Web SDK。');
   }
-  return await auth.getVerification({ email });
+  await auth.sendEmailVerificationCode(email);
 }
 
-export async function signInWithEmailCode(email: string, code: string, verificationInfo: EmailVerificationInfo): Promise<AuthUser> {
+export async function signInWithEmailCode(email: string, code: string): Promise<AuthUser> {
   const auth = authApi();
-  if (typeof auth.signInWithEmail !== 'function') {
+  if (typeof auth.signInWithEmailVerificationCode !== 'function') {
     throw new Error('当前 CloudBase Web SDK/环境不支持邮箱验证码登录，未自动改用其他登录方式。');
   }
-  const result = await auth.signInWithEmail({ email, verificationInfo, verificationCode: code });
+  const result = await auth.signInWithEmailVerificationCode(email, code);
   const user = userOf(result) || userOf(await auth.getLoginState?.());
   if (!user) throw new Error('登录成功但未取得 CloudBase uid');
   return { ...user, email: user.email || email };

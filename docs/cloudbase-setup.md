@@ -20,8 +20,6 @@
 5. 将生产域名和本地开发域名加入 Web 安全域名/跨域白名单。
 6. 从 `.env.example` 创建未提交的 `.env.local`，只填写公开环境 ID：`VITE_CLOUDBASE_ENV_ID=...`。
 
-饭小宝当前环境 ID 为 `fanxiaobao-d9gpf87uvf3323ae7`。GitHub Actions 在构建任务中显式注入该公开值；CloudBase 控制台 Git 部署也必须配置同名的构建环境变量。邮箱验证码登录使用 Web SDK 的 `getVerification({ email })` 获取一次性的 `verificationInfo`，随后将其连同验证码传给 `signInWithEmail(...)`。
-
 ## 数据与迁移
 
 - 原 persist key 为 `baby-recipe-storage`，迁移版本 1 会幂等复制到 `fanxiaobao:guest`；确认新空间保存前不会删除原 key。

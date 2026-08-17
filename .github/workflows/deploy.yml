@@ -8,9 +8,6 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    env:
-      # CloudBase environment IDs are public browser configuration, not credentials.
-      VITE_CLOUDBASE_ENV_ID: fanxiaobao-d9gpf87uvf3323ae7
     steps:
       - uses: actions/checkout@v4
 
