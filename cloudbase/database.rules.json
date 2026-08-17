@@ -1,0 +1,6 @@
+{
+  "read": "auth.uid != null && doc.userId == auth.uid",
+  "create": "auth.uid != null && request.document.userId == auth.uid",
+  "update": "auth.uid != null && doc.userId == auth.uid && request.document.userId == auth.uid",
+  "delete": "auth.uid != null && doc.userId == auth.uid"
+}
