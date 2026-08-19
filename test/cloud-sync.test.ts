@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { chooseInitialAction, compareVersions, hasEffectiveData, SyncQueue } from '../src/services/cloudSyncService.ts';
 import { GUEST_STORAGE_KEY, LEGACY_STORAGE_KEY, LOCAL_MIGRATION_KEY, identityStorage, migrateLegacyStorage, normalizeStableIds, setActiveUid, storageKeyFor } from '../src/services/localSpaceService.ts';
+import { authErrorMessage } from '../src/services/authService.ts';
 
 class MemoryStorage implements Storage {
   private values = new Map<string, string>();
@@ -46,4 +47,6 @@ retry.schedule(); await retry.flush(); assert.equal(retry.hasPending(), true); a
 
 // The whitelist shape intentionally excludes public recipes and temporary UI state.
 assert.equal('publicRecipes' in empty, false); assert.equal('loading' in empty, false);
+assert.equal(authErrorMessage({ message: '请求过于频繁' }), '请求过于频繁');
+assert.equal(authErrorMessage({ code: 'INVALID_ORIGIN' }), 'CloudBase 请求失败：INVALID_ORIGIN');
 console.log('cloud-sync tests passed');

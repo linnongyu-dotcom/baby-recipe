@@ -22,6 +22,8 @@
 
 饭小宝当前环境 ID 为 `fanxiaobao-d9gpf87uvf3323ae7`。GitHub Actions 在构建任务中显式注入该公开值；CloudBase 控制台 Git 部署也必须配置同名的构建环境变量。邮箱验证码登录使用 Web SDK 的 `getVerification({ email })` 获取一次性的 `verificationInfo`，随后将其连同验证码传给 `signInWithEmail(...)`。
 
+同一个 CloudBase app 在页面生命周期内只创建一个 `auth` 对象；重复调用 `app.auth()` 会触发 SDK 的 `INVALID_OPERATION: every cloudbase instance should has only one auth object`。
+
 ## 数据与迁移
 
 - 原 persist key 为 `baby-recipe-storage`，迁移版本 1 会幂等复制到 `fanxiaobao:guest`；确认新空间保存前不会删除原 key。

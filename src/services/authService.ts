@@ -3,11 +3,26 @@ import { getCloudBaseApp } from '@/lib/cloudbase';
 
 export interface AuthUser { uid: string; email?: string }
 export type EmailVerificationInfo = Record<string, unknown>;
+let authInstance: any = null;
 
 function authApi(): any {
   const app = getCloudBaseApp();
   if (!app) throw new Error('CloudBase 尚未配置');
-  return app.auth();
+  // CloudBase requires exactly one auth object per app instance. Recreating it
+  // for session restore, verification and sign-in produces INVALID_OPERATION.
+  if (!authInstance) authInstance = app.auth();
+  return authInstance;
+}
+
+export function authErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message;
+  if (error && typeof error === 'object') {
+    const detail = error as Record<string, unknown>;
+    const message = detail.message || detail.error_description || detail.msg;
+    if (typeof message === 'string' && message) return message;
+    if (typeof detail.code === 'string' && detail.code) return `CloudBase 请求失败：${detail.code}`;
+  }
+  return 'CloudBase 请求失败，请检查网络与认证配置后重试';
 }
 
 const userOf = (raw: any): AuthUser | null => {
@@ -19,7 +34,7 @@ const userOf = (raw: any): AuthUser | null => {
 export async function restoreSession(): Promise<AuthUser | null> {
   const app = getCloudBaseApp();
   if (!app) return null;
-  const auth: any = app.auth();
+  const auth = authApi();
   return userOf(await auth.getLoginState?.());
 }
 
