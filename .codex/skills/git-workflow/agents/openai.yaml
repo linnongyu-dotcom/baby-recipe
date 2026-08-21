@@ -1,0 +1,4 @@
+interface:
+  display_name: "Git Workflow"
+  short_description: "Safely initialize, inspect, commit, and publish Git repositories"
+  default_prompt: "Use the Git workflow to inspect this repository, make a focused commit, and publish it safely."
