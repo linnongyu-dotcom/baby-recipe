@@ -1962,10 +1962,12 @@ export function regenerateMeal(
     dinner: mealType === 'dinner' ? regenerated : mealContext?.dinner || { dishes: [] },
     };
     enforceVegetableDiversityRules(context, availableRecipes, age, usedIds);
-    const hasRedMeat = [...availableRecipes.meat, ...availableRecipes.egg].some(r =>
-      getMealSuitable(r).includes('lunch') && isIndependentProteinDish(r) && getProteinType(r) === 'red_meat');
     const hasLightProtein = [...availableRecipes.meat, ...availableRecipes.egg, ...availableRecipes.vegetable].some(isLightDinnerProtein);
-    if (validateMealForContext(context[mealType].dishes, age, mealType, context, { hasRedMeat, hasLightProtein }).valid) {
+    // Lunch protein rotation deliberately moves on to poultry and aquatic dishes
+    // after the weekly red-meat target is met. Treating the mere existence of a
+    // red-meat recipe as a hard validation requirement rejected every rotated
+    // lunch and made refresh silently fall back to the meal already on screen.
+    if (validateMealForContext(context[mealType].dishes, age, mealType, context, { hasLightProtein }).valid) {
       return context[mealType];
     }
   }

@@ -25,6 +25,18 @@ for (const age of ['1-2y', '2-3y', '3-5y'] as AgeGroup[]) {
       const replaced = replaceDishInMeal(settings, [], used, mealType, refreshed, 0, context);
       test(`${age} ${mealType} 换一道后仍通过`, validateMealForContext(replaced.dishes, age, mealType, { ...context, [mealType]: replaced }).valid);
     }
+    const refreshedLunch = regenerateMeal(
+      settings,
+      [],
+      used,
+      'lunch',
+      day,
+      Object.values(week).slice(1).map(plan => plan.lunch.dishes.find(dish => dish.dishType === 'meat')).filter(Boolean) as typeof used,
+    );
+    test(
+      `${age} 午餐全部换不会因红肉候选存在而退回原餐`,
+      refreshedLunch.dishes.some(dish => !day.lunch.dishes.some(current => current.id === dish.id)),
+    );
     const swapped = swapMeals(day, age);
     test(`${age} 不合规交换不会写入`, swapped === day || (
       validateMealForContext(swapped.lunch.dishes, age, 'lunch', swapped).valid &&
@@ -41,7 +53,7 @@ const persisted = {
   favoriteIds: ['favorite-1'], customRecipes: [{ id: 'custom-1' }], otherSetting: true,
 };
 const migrated = migrateMealRuleCache(persisted)!;
-test('persist 版本提升到 44 以清除旧规则餐单', PERSIST_VERSION === 44);
+test('persist 版本提升到 45 以清除旧规则餐单', PERSIST_VERSION === 45);
 test('旧餐单迁移后清空', migrated.weeklyPlan === null);
 test('迁移保留年龄过敏忌口喜好', migrated.settings === persisted.settings);
 test('迁移保留宝宝档案', migrated.babies === persisted.babies);
@@ -49,7 +61,7 @@ test('迁移保留收藏和自定义食谱', migrated.favoriteIds === persisted.
 test('迁移保留其他设置', migrated.otherSetting === true);
 test('null 餐单迁移正常', migrateMealRuleCache({ ...persisted, weeklyPlan: null })!.weeklyPlan === null);
 // persist middleware只会在旧版本调用 migrate；当前版本不会重复调用该函数。
-test('当前版本餐单可保留（迁移调用边界）', PERSIST_VERSION === 44 && oldPlan !== null);
+test('当前版本餐单可保留（迁移调用边界）', PERSIST_VERSION === 45 && oldPlan !== null);
 
 if (failures.length) {
   console.error(`失败 ${failures.length} 项：\n${failures.map(name => `- ${name}`).join('\n')}`);
