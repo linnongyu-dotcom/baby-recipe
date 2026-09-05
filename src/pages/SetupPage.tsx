@@ -284,7 +284,7 @@ export function SetupPage() {
                   value={birthDate}
                   onChange={(e) => setBirthDate(e.target.value)}
                   max={today}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none text-gray-700 text-lg transition-colors"
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none text-gray-700 text-base transition-colors"
                 />
               </div>
 
@@ -305,7 +305,7 @@ export function SetupPage() {
                   onChange={(e) => setNickname(e.target.value.slice(0, 8))}
                   placeholder="输入宝宝的名字或小名"
                   maxLength={8}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none text-gray-700 text-lg transition-colors"
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none text-gray-700 text-base transition-colors"
                 />
               </div>
 

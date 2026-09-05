@@ -29,6 +29,25 @@ body {
   background-color: var(--color-background);
 }
 
+/*
+ * iOS Safari 日期控件溢出修复
+ * input[type="date"] 在 iOS 上是"替换元素 + inline-flex"，
+ * 默认 min-width:auto 会强制按内部日期内容的最小宽度渲染，
+ * 导致它忽略容器宽度约束而横向溢出屏幕（iPhone 16 常见）。
+ * appearance:none 重置为标准盒模型渲染，使 width/min-width 生效。
+ */
+input[type="date"],
+input[type="time"],
+input[type="datetime-local"],
+input[type="month"],
+input[type="week"] {
+  -webkit-appearance: none;
+  appearance: none;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 3rem;
+}
+
 /* 自定义滚动条 */
 ::-webkit-scrollbar {
   width: 8px;
