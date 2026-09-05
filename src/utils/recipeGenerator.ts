@@ -1992,9 +1992,11 @@ export function replaceDishInMeal(
   const available = filterRecipes(settings, customRecipes);
   const usedIds = new Set(usedRecipes.map(r => r.id));
   const pool = available[target.dishType];
-  const ordered = [...pool.filter(r => !usedIds.has(r.id)), ...pool.filter(r => usedIds.has(r.id))];
+  // 两组候选各自打乱顺序，避免"换一道"每次都命中固定顺序里的第一个、在两个菜之间来回切换
+  const unused = pool.filter(r => !usedIds.has(r.id)).sort(() => currentRandom() - 0.5);
+  const used = pool.filter(r => usedIds.has(r.id)).sort(() => currentRandom() - 0.5);
   const seen = new Set<string>();
-  for (const candidate of ordered) {
+  for (const candidate of [...unused, ...used]) {
     if (seen.has(candidate.id) || candidate.id === target.id) continue;
     seen.add(candidate.id);
     const dishes = meal.dishes.map((dish, index) => index === dishIndex ? candidate : dish);
